@@ -1,0 +1,91 @@
+[project]
+name = "hsl-rt-analysis"
+description = "Analysis toolkit for HSL High Frequency Positioning (HFP) data"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+version = "0.1.0"
+
+dependencies = [
+    # Core data processing
+    "numpy>=1.24.0",
+    "pandas>=2.2.3",
+    "scipy>=1.10.0",
+
+    # Time series analysis
+    "statsmodels>=0.14.0",
+    "dtaidistance",  # For time series pattern matching
+
+    # Machine Learning
+    "scikit-learn>=1.3.0",
+
+    # Visualization
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "plotly>=5.18.0",
+    "dash>=2.14.0",  # Added for web dashboards
+    "streamlit>=1.40.1",
+    "watchdog",
+
+    # Geospatial analysis
+    "folium>=0.14.0",
+    "geopandas>=1.0.1",
+    "shapely>=2.0.0",  # Added for geometric operations
+
+    # Data validation and processing
+    # "great-expectations>=1.3.8",
+    "pyarrow>=14.0.0",
+    "tqdm>=4.67.0",
+]
+
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",  # For anomaly detection
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.1.0",
+]
+dev = [
+    "ruff",
+    "pre-commit",
+    # "jupyter",
+    # "notebook",
+]
+docs = [
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=1.3.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 119
+target-version = "py311"
+exclude = ["docs/*.py"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.ruff.isort]
+combine-as-imports = true
+lines-after-imports = 2
+known-first-party = ["hsl_rt_analysis"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--cov=fvhdata --cov-report=term-missing"
