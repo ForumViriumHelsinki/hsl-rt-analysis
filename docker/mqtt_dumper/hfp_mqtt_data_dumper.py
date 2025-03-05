@@ -1,14 +1,17 @@
 import argparse
+import contextlib
 import datetime
 import gzip
 import json
 import logging
 import os
 import shutil
+import signal
 import threading
+import time
 from datetime import timedelta
 from pathlib import Path
-from typing import Dict
+from typing import Dict, TextIO
 
 import paho.mqtt.client as mqtt
 
@@ -42,6 +45,11 @@ class FileHandler:
         self.base_dir = base_dir
         self.max_size = max_size
         self.rotation_interval = datetime.timedelta(hours=rotation_interval)
+        # Add file handle management
+        self.file_handles: Dict[Path, TextIO] = {}
+        self.exit_stack = contextlib.ExitStack()
+        self.last_flush = time.time()
+        self.flush_interval = 30  # Flush every 30 seconds
 
     def get_filepath(self, route: str, date: datetime.datetime) -> Path:
         """Get the appropriate file path for the given route and date."""
@@ -53,6 +61,56 @@ class FileHandler:
 
         filename = f"{route}-{date.strftime('%Y-%m-%dT%H')}.txt"
         return file_dir / filename
+
+    def get_file_handle(self, route: str, date: datetime.datetime) -> TextIO:
+        """Get or create a file handle for the given route and date."""
+        filepath = self.get_filepath(route, date)
+
+        # Check if we need to rotate any files
+        current_hour = date.replace(minute=0, second=0, microsecond=0)
+        if filepath in self.file_handles:
+            file_mtime = datetime.datetime.fromtimestamp(filepath.stat().st_mtime, tz=datetime.UTC)
+            file_hour = file_mtime.replace(minute=0, second=0, microsecond=0)
+            if file_hour < current_hour:
+                self._close_and_rotate_file(filepath)
+
+        # Create new file handle if needed
+        if filepath not in self.file_handles:
+            f = self.exit_stack.enter_context(open(filepath, mode="a", buffering=8192, encoding="utf-8"))
+            self.file_handles[filepath] = f
+            logging.debug(f"Opened new file handle for {filepath}")
+
+        return self.file_handles[filepath]
+
+    def write_message(self, route: str, message: str):
+        """Write a message to the appropriate file."""
+        current_time = datetime.datetime.now(datetime.UTC)
+        f = self.get_file_handle(route, current_time)
+        f.write(message)
+
+        # Periodic flush of all files
+        flush_time = time.time()
+        if flush_time - self.last_flush >= self.flush_interval:
+            self.flush_all()
+            self.last_flush = flush_time
+
+    def flush_all(self):
+        """Flush all open file handles."""
+        for f in self.file_handles.values():
+            f.flush()
+        logging.debug("Flushed all file handles")
+
+    def _close_and_rotate_file(self, filepath: Path):
+        """Close a file handle and rotate the file."""
+        if filepath in self.file_handles:
+            self.file_handles[filepath].close()
+            del self.file_handles[filepath]
+            self.rotate_file(filepath)
+
+    def close_all(self):
+        """Close all open file handles."""
+        self.exit_stack.close()
+        self.file_handles.clear()
 
     def rotate_file(self, filepath: Path):
         """Compress and rotate the file."""
@@ -119,12 +177,12 @@ class RotationManager:
     def _check_files(self):
         """Check and rotate old files."""
         try:
-            now = datetime.datetime.now()
+            now = datetime.datetime.now(datetime.UTC)
             # Find all .txt files recursively
             for txt_file in self.base_dir.rglob("*.txt"):
                 try:
                     # Get file's last modification time
-                    mtime = datetime.datetime.fromtimestamp(txt_file.stat().st_mtime)
+                    mtime = datetime.datetime.fromtimestamp(txt_file.stat().st_mtime, tz=datetime.UTC)
                     age = now - mtime
 
                     # Rotate if file is old enough
@@ -244,23 +302,16 @@ def on_message(client: mqtt.Client, userdata: Dict, msg: mqtt.MQTTMessage):
         payload = json.loads(msg.payload.decode("utf-8"))
         logging.debug(f"Received message on topic {msg.topic}")
 
-        # Extract route and get current time
+        # Extract route
         topic_parts = msg.topic.split("/")
         route = topic_parts[9]
-        current_time = datetime.datetime.now(datetime.UTC)
-
-        # Get file path and handle rotation
-        file_handler = userdata["file_handler"]
-        filepath = file_handler.get_filepath(route, current_time)
 
         # Prepare the message
         message = f"{msg.topic} {json.dumps(payload)}\n"
 
-        # Write to file
-        with open(filepath, "a") as f:
-            f.write(message)
-
-        logging.debug(f"Data written to {filepath}")
+        # Write using FileHandler
+        file_handler = userdata["file_handler"]
+        file_handler.write_message(route, message)
 
     except Exception as e:
         logging.error(f"Error processing message: {e}")
@@ -304,23 +355,33 @@ def setup_mqtt_client(args: argparse.Namespace) -> mqtt.Client:
     return client
 
 
+def signal_handler(signum, frame):
+    """Handle termination signals for graceful shutdown."""
+    logging.info(f"Received signal {signum}, shutting down gracefully...")
+    raise KeyboardInterrupt
+
+
 def main():
     # Parse arguments and configure logging
     args = parse_args()
 
+    # Setup signal handlers
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
     # Setup MQTT client
     client = setup_mqtt_client(args)
-
-    # Create and start rotation manager
     file_handler = client._userdata["file_handler"]
-    rotation_manager = RotationManager(
-        base_dir=args.output_dir,
-        check_interval=timedelta(hours=1),  # Check every hour
-        min_age=timedelta(hours=3),  # Rotate files older than 3 hours
-        file_handler=file_handler,
-    )
 
     try:
+        # Create and start rotation manager
+        rotation_manager = RotationManager(
+            base_dir=args.output_dir,
+            check_interval=timedelta(hours=1),  # Check every hour
+            min_age=timedelta(hours=3),  # Rotate files older than 3 hours
+            file_handler=file_handler,
+        )
+
         # Start rotation manager
         rotation_manager.start()
 
@@ -333,14 +394,20 @@ def main():
 
     except KeyboardInterrupt:
         logging.info("Shutting down...")
+        file_handler.flush_all()  # Ensure all data is written
+        file_handler.close_all()  # Close all files
         rotation_manager.stop()
         client.disconnect()
     except ConnectionRefusedError:
         logging.error(f"Connection refused to {args.broker_host}:{args.broker_port}")
+        file_handler.flush_all()  # Ensure all data is written
+        file_handler.close_all()  # Close all files
         rotation_manager.stop()
         raise
     except Exception as e:
         logging.error(f"Error in main loop: {e}")
+        file_handler.flush_all()  # Ensure all data is written
+        file_handler.close_all()  # Close all files
         rotation_manager.stop()
         raise
 
