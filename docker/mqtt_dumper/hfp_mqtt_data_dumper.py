@@ -9,6 +9,7 @@ import shutil
 import signal
 import threading
 import time
+import uuid
 from datetime import timedelta
 from pathlib import Path
 from typing import Dict, TextIO
@@ -274,44 +275,44 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def on_connect(client: mqtt.Client, userdata: Dict, flags: Dict, rc: int):
+def on_connect(client: mqtt.Client, userdata: Dict, flags, reason_code, properties=None):
     """Callback for when the client connects to the broker."""
 
-    if rc == 0:
+    if reason_code == 0:
         logging.info("Connected to MQTT broker successfully")
         # Subscribe to all topics
         for topic in userdata["topics"]:
+            logging.info(f"Subscribing to topic: '{topic}' with QoS {userdata['qos']}")
             client.subscribe(topic, qos=userdata["qos"])
-            logging.info(f"Subscribed to topic: {topic} with QoS {userdata['qos']}")
     else:
-        logging.error(f"Connection failed: {MQTT_RC_CODES.get(rc, f'Unknown error ({rc})')}")
+        logging.error(f"Connection failed: {MQTT_RC_CODES.get(reason_code, f'Unknown error ({reason_code})')}")
 
 
-def on_disconnect(client: mqtt.Client, userdata: Dict, rc: int):
+def on_disconnect(client: mqtt.Client, userdata: Dict, reason_code, properties=None):
     """Callback for when the client disconnects from the broker."""
-    if rc != 0:
+    if reason_code != 0:
         logging.warning("Unexpected disconnection, will automatically reconnect...")
     else:
         logging.info("Disconnected from broker")
 
 
-def on_message(client: mqtt.Client, userdata: Dict, msg: mqtt.MQTTMessage):
+def on_message(client: mqtt.Client, userdata: Dict, message: mqtt.MQTTMessage, properties=None):
     """Callback for when a message is received from the broker."""
     try:
         # Decode the message payload
-        payload = json.loads(msg.payload.decode("utf-8"))
-        logging.debug(f"Received message on topic {msg.topic}")
+        payload = json.loads(message.payload.decode("utf-8"))
+        logging.debug(f"Received message on topic {message.topic}")
 
         # Extract route
-        topic_parts = msg.topic.split("/")
+        topic_parts = message.topic.split("/")
         route = topic_parts[9]
 
         # Prepare the message
-        message = f"{msg.topic} {json.dumps(payload)}\n"
+        msg_str = f"{message.topic} {json.dumps(payload)}\n"
 
         # Write using FileHandler
         file_handler = userdata["file_handler"]
-        file_handler.write_message(route, message)
+        file_handler.write_message(route, msg_str)
 
     except Exception as e:
         logging.error(f"Error processing message: {e}")
@@ -321,12 +322,12 @@ def setup_mqtt_client(args: argparse.Namespace) -> mqtt.Client:
     """Setup and configure MQTT client with the given arguments."""
     # Create client instance
     client_kwargs = {}
-    if args.client_id:
-        client_kwargs["client_id"] = args.client_id
+    client_kwargs["client_id"] = args.client_id or f"hsl_dumper_{uuid.uuid4().hex[:8]}"
 
     file_handler = FileHandler(args.output_dir, args.max_file_size, args.rotation_interval)
 
     client = mqtt.Client(
+        mqtt.CallbackAPIVersion.VERSION2,
         userdata={
             "topics": args.topics,
             "output_dir": args.output_dir,
