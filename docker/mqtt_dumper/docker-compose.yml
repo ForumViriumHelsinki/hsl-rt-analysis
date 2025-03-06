@@ -1,16 +1,32 @@
 services:
-  mqtt_dumper:
+  mqtt_dumper_base: &mqtt_dumper_base
+    profiles:
+      - "donotstart"
     build:
       context: ../..
       dockerfile: docker/mqtt_dumper/Dockerfile
     volumes:
       - ../../data/raw:/app/data
-    environment:
-      - MQTT_TOPICS=${MQTT_TOPICS}
-      - MQTT_USERNAME=${MQTT_USERNAME:-}
-      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
-    command: python hfp_mqtt_data_dumper.py --output-dir /app/data --topics ${MQTT_TOPICS}
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  hsl_dumper_2015:
+    <<: *mqtt_dumper_base
+    container_name: hsl_dumper_2015
+    volumes:
+      - ../../data/raw/2015:/app/data
+    command: python hfp_mqtt_data_dumper.py --output-dir /app/data --log INFO --topics "/hfp/v2/journey/ongoing/+/tram/+/+/2015/#"
+
+  hsl_dumper_koskelantie_50:
+    <<: *mqtt_dumper_base
+    container_name: hsl_dumper_koskelantie_50
+    volumes:
+      - ../../data/raw/koskelantie_50:/app/data
+    command: python hfp_mqtt_data_dumper.py --output-dir /app/data --log INFO --topics "/hfp/v2/journey/ongoing/+/bus/+/+/1057/+/+/+/+/+/60;24/29/15/#"
   # Example of additional dumper instance with different topics
   # mqtt_dumper_2:
   #   extends: mqtt_dumper
