@@ -1,17 +1,20 @@
 import argparse
 import gzip
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import geopandas as gpd
 import pandas as pd
+from shapely.geometry import Point
 from tqdm import tqdm
 
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Process HFP (High Frequency Positioning) data files.")
+    parser = argparse.ArgumentParser(description="Convert HSL HFP MQTT data dump files to GeoParquet format.")
     parser.add_argument("--rt-files", nargs="+", required=True, help="List of HFP data files (text or gzip).")
     parser.add_argument(
         "--bbox",
@@ -20,7 +23,12 @@ def parse_args():
     )
     parser.add_argument("--dir", type=str, help='Direction to filter (e.g., "1" or "2").')
     parser.add_argument("--outfile", required=True, nargs="+", help="Output file (CSV or Parquet based on extension).")
-    return parser.parse_args()
+    parser.add_argument("--log", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], default="INFO")
+    args = parser.parse_args()
+    logging.basicConfig(
+        level=args.log, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    return args
 
 
 def parse_hfp_line(line: str) -> Optional[Dict[str, Any]]:
@@ -78,8 +86,7 @@ def process_file(
     results = []
 
     # Check if the file is gzipped
-    open_func = gzip.open if file_path.endswith(".gz") else open
-    mode = "rt" if file_path.endswith(".gz") else "r"
+    open_func, mode = (gzip.open, "rt") if file_path.endswith(".gz") else (open, "r")
 
     # Process the file with a progress bar
     with open_func(file_path, mode) as f:
@@ -149,7 +156,7 @@ def process_files(
 
 
 def save_dataframe(df: pd.DataFrame, outfile: List[str]):
-    """Save the DataFrame to the specified output file."""
+    """Save the DataFrame to the specified output file(s)."""
     print(f"Saving data to {outfile}")
 
     # Ensure the output directory exists
@@ -158,12 +165,22 @@ def save_dataframe(df: pd.DataFrame, outfile: List[str]):
 
     # Save based on file extension
     for of in outfile:
-        if of.endswith(".parquet"):
+        if of.endswith(".geoparquet"):
+            # Create geometry column from lat/long
+            geometry = [Point(xy) for xy in zip(df["long"], df["lat"])]
+
+            # Convert to GeoDataFrame, in WGS84 coordinate system
+            gdf = gpd.GeoDataFrame(df, geometry=geometry, crs="EPSG:4326")
+
+            # Save as GeoParquet
+            gdf.to_parquet(of, index=False)
+
+        elif of.endswith(".parquet"):
             df.to_parquet(of)
         elif of.endswith(".csv"):
             df.to_csv(of, index=False)
         else:
-            raise ValueError("Output file must have .parquet or .csv extension")
+            raise ValueError("Output file must have .parquet, .geoparquet, or .csv extension")
 
     print(f"Data saved successfully. Total records: {len(df)}")
 
