@@ -123,7 +123,7 @@ def create_map(vehicle_data: List[dict], viz_type: str = "points") -> folium.Map
     center_lat = sum(data["lat"] for data in vehicle_data) / len(vehicle_data)
     center_lon = sum(data["lon"] for data in vehicle_data) / len(vehicle_data)
 
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=12)
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles="cartodbpositron")
 
     if "heatmap" in viz_type:
         # Prepare data for heatmap
