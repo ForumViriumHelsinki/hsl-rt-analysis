@@ -182,11 +182,11 @@ def process_files(file_paths: List[str], chunk_size: int = 100000) -> pd.DataFra
     return df
 
 
-def save_dataframe(df: pd.DataFrame, outfile: str, outfile_format: List[str]):
+def save_dataframe(df: pd.DataFrame, outfile: Path, outfile_format: List[str]):
     """Save the DataFrame to the specified output file(s)."""
 
     # Ensure the output directory exists
-    Path(outfile).parent.mkdir(parents=True, exist_ok=True)
+    outfile.parent.mkdir(parents=True, exist_ok=True)
 
     # Save based on file extension
     for of in outfile_format:
@@ -304,49 +304,69 @@ def group_input_files(file_paths: List[str]) -> Dict[str, Dict[str, List[str]]]:
     return grouped_files
 
 
+def process_route_group(date: str, route_group: str, files: List[str], output_dir: str, output_formats: List[str]):
+    """
+    Process all files for a single route group.
+
+    Args:
+        date: Date string (YYYY-MM-DD)
+        route_group: Route group identifier
+        files: List of input files
+        output_dir: Base output directory
+        output_formats: List of output formats to generate
+    """
+    print(f"Processing route group: {route_group}")
+    # Process all files and create the DataFrame
+    df = process_files(files)
+
+    # Create output path using pathlib
+    date_str = date.replace("-", "")
+    output_path = pathlib.Path(output_dir) / date / f"{route_group}_{date_str}"
+
+    # Calculate additional columns for analysis
+    if not df.empty:
+        # Convert timestamp to datetime
+        df["timestamp"] = pd.to_datetime(df["tst"], format="ISO8601")
+        # Sort by vehicle and timestamp
+        df = df.sort_values(["timestamp", "veh"])
+        # Calculate speed changes (for deceleration detection)
+        # df["speed_diff"] = df.groupby("veh")["spd"].diff()
+
+        # Calculate time diff in seconds
+        # df["time_diff"] = df.groupby("veh")["tsi"].diff()
+
+        # Calculate acceleration explicitly (change in speed / change in time)
+        # This can be compared with the 'acc' value reported in the data
+        # df["calc_acc"] = df["speed_diff"] / df["time_diff"]
+
+        # Flag potential sudden braking events
+        # (this is just a simple heuristic, can be refined in analysis)
+        # df["potential_braking"] = (df["speed_diff"] < -1.5) & (df["time_diff"] < 3)
+
+    # Save the DataFrame
+    print(output_path, output_formats)
+    save_dataframe(df, output_path, output_formats)
+
+
 def main():
     args = parse_args()
 
     # Group files by date and route/route group
     grouped_files = group_input_files(args.rt_files)
-    # Print all dates and their route groups
+
+    # Process each date and route group
     for date in grouped_files:
         print(f"\nDate: {date}")
         print("Route groups:", sorted(list(grouped_files[date].keys())))
-        for rg in grouped_files[date]:
-            print(f"Route group: {rg}")
-            print(grouped_files[date][rg])
-            # Process all files and create the DataFrame
-            df = process_files(grouped_files[date][rg])
-            print(df.head())
-            # create output path using pathlib
-            date_str = date.replace("-", "")
-            output_path = pathlib.Path(args.outdir) / date / f"{rg}_{date_str}"
-            # Calculate some additional columns for analysis
-            if not df.empty:
-                # Convert timestamp to datetime
-                df["timestamp"] = pd.to_datetime(df["tst"], format="ISO8601")
 
-                # Sort by vehicle and timestamp
-                df = df.sort_values(["timestamp", "veh"])
-
-                # Calculate speed changes (for deceleration detection)
-                # df["speed_diff"] = df.groupby("veh")["spd"].diff()
-
-                # Calculate time diff in seconds
-                # df["time_diff"] = df.groupby("veh")["tsi"].diff()
-
-                # Calculate acceleration explicitly (change in speed / change in time)
-                # This can be compared with the 'acc' value reported in the data
-                # df["calc_acc"] = df["speed_diff"] / df["time_diff"]
-
-                # Flag potential sudden braking events
-                # (this is just a simple heuristic, can be refined in analysis)
-                # df["potential_braking"] = (df["speed_diff"] < -1.5) & (df["time_diff"] < 3)
-
-            # Save the DataFrame
-            print(output_path, args.outfile)
-            save_dataframe(df, output_path, args.outfile)
+        for route_group in grouped_files[date]:
+            process_route_group(
+                date=date,
+                route_group=route_group,
+                files=grouped_files[date][route_group],
+                output_dir=args.outdir,
+                output_formats=args.outfile,
+            )
 
 
 if __name__ == "__main__":
