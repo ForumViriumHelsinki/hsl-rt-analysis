@@ -12,7 +12,7 @@ import time
 import uuid
 from datetime import timedelta
 from pathlib import Path
-from typing import Dict, TextIO
+from typing import Dict, List, TextIO, Tuple
 
 import paho.mqtt.client as mqtt
 
@@ -35,22 +35,19 @@ MQTT_RC_CODES = {
 # Default settings
 DEFAULT_RECONNECT_DELAY = 30  # seconds
 DEFAULT_QOS = 1  # At least once delivery
-DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
-DEFAULT_ROTATION_INTERVAL = 24  # hours
 
 
 class FileHandler:
     """Class to handle file operations with rotation and compression."""
 
-    def __init__(self, base_dir: Path, max_size: int, rotation_interval: int):
+    def __init__(self, base_dir: Path):
         self.base_dir = base_dir
-        self.max_size = max_size
-        self.rotation_interval = datetime.timedelta(hours=rotation_interval)
-        # Add file handle management
-        self.file_handles: Dict[Path, TextIO] = {}
+        self.file_handles: Dict[str, Tuple[Path, TextIO]] = {}
+        self.files_to_rotate: List[Path] = []
         self.exit_stack = contextlib.ExitStack()
         self.last_flush = time.time()
-        self.flush_interval = 30  # Flush every 30 seconds
+        self.flush_interval = 30
+        self.last_write_time: Dict[str, datetime.datetime] = {}
 
     def get_filepath(self, route: str, date: datetime.datetime) -> Path:
         """Get the appropriate file path for the given route and date."""
@@ -65,48 +62,66 @@ class FileHandler:
 
     def get_file_handle(self, route: str, date: datetime.datetime) -> TextIO:
         """Get or create a file handle for the given route and date."""
-        filepath = self.get_filepath(route, date)
+        new_filepath = self.get_filepath(route, date)
 
-        # Check if we need to rotate any files
-        current_hour = date.replace(minute=0, second=0, microsecond=0)
-        if filepath in self.file_handles:
-            file_mtime = datetime.datetime.fromtimestamp(filepath.stat().st_mtime, tz=datetime.UTC)
-            file_hour = file_mtime.replace(minute=0, second=0, microsecond=0)
-            if file_hour < current_hour:
-                self._close_and_rotate_file(filepath)
+        # Check if we need to rotate the file for this route
+        if route in self.file_handles:
+            current_path = self.file_handles[route][0]
+            if current_path != new_filepath:
+                # Different hour, close and rotate old file
+                self._close_and_rotate_file(route)
 
         # Create new file handle if needed
-        if filepath not in self.file_handles:
-            f = self.exit_stack.enter_context(open(filepath, mode="a", buffering=8192, encoding="utf-8"))
-            self.file_handles[filepath] = f
-            logging.debug(f"Opened new file handle for {filepath}")
+        if route not in self.file_handles:
+            new_handle = self.exit_stack.enter_context(open(new_filepath, mode="a", buffering=8192, encoding="utf-8"))
+            self.file_handles[route] = (new_filepath, new_handle)
+            logging.info(f"Opened new file handle for {new_filepath}")
 
-        return self.file_handles[filepath]
+        return self.file_handles[route][1]  # Return TextIO handle
 
     def write_message(self, route: str, message: str):
         """Write a message to the appropriate file."""
         current_time = datetime.datetime.now(datetime.UTC)
         f = self.get_file_handle(route, current_time)
         f.write(message)
+        self.last_write_time[route] = current_time
 
         # Periodic flush of all files
         flush_time = time.time()
         if flush_time - self.last_flush >= self.flush_interval:
-            self.flush_all()
             self.last_flush = flush_time
+            self.flush_all()
 
     def flush_all(self):
         """Flush all open file handles."""
-        for f in self.file_handles.values():
-            f.flush()
-        logging.debug("Flushed all file handles")
+        for _, (_, handle) in self.file_handles.items():
+            handle.flush()
+        logging.info("Flushed all file handles")
 
-    def _close_and_rotate_file(self, filepath: Path):
-        """Close a file handle and rotate the file."""
-        if filepath in self.file_handles:
-            self.file_handles[filepath].close()
-            del self.file_handles[filepath]
-            self.rotate_file(filepath)
+    def _close_and_rotate_file(self, route: str):
+        """Close a file handle and queue file for rotation."""
+        if route in self.file_handles:
+            filepath, handle = self.file_handles[route]
+            self.files_to_rotate.append(filepath)
+            logging.info(f"Queueing file for rotation: {filepath}")
+            logging.info(f"Number of files to rotate: {len(self.files_to_rotate)}")
+            handle.close()
+            del self.file_handles[route]
+
+    def rotate_queued_files(self):
+        """Rotate files that have been queued for rotation."""
+        if not self.files_to_rotate:
+            return
+
+        logging.info(f"Starting rotation of {len(self.files_to_rotate)} queued files")
+
+        while self.files_to_rotate:
+            filepath = self.files_to_rotate.pop(0)
+            try:
+                self.rotate_file(filepath)
+                logging.debug(f"Successfully rotated file: {filepath}")
+            except Exception as e:
+                logging.error(f"Error rotating file {filepath}: {e}")
 
     def close_all(self):
         """Close all open file handles."""
@@ -145,7 +160,10 @@ class RotationManager:
         self.min_age = min_age
         self.file_handler = file_handler
         self._timer = None
+        self._queue_timer = None  # New timer for queued files
         self._running = False
+        self.inactive_threshold = timedelta(minutes=70)
+        self.queue_check_interval = 300  # Seconds between queue checks
 
     def start(self):
         """Start the rotation manager with immediate first check in separate thread."""
@@ -154,6 +172,8 @@ class RotationManager:
         initial_check = threading.Thread(target=self._initial_check)
         initial_check.daemon = True
         initial_check.start()
+        # Start queue processing
+        self._schedule_queue_check()
         logging.info(f"RotationManager started. Checking every {self.check_interval}")
 
     def _initial_check(self):
@@ -166,6 +186,8 @@ class RotationManager:
         self._running = False
         if self._timer:
             self._timer.cancel()
+        if self._queue_timer:
+            self._queue_timer.cancel()
         logging.info("RotationManager stopped")
 
     def _schedule_next_check(self):
@@ -179,6 +201,10 @@ class RotationManager:
         """Check and rotate old files."""
         try:
             now = datetime.datetime.now(datetime.UTC)
+            logging.info(f"Checking files at {now}")
+            # Check for inactive file handles first
+            self._check_inactive_handles(now)
+
             # Find all .txt files recursively
             for txt_file in self.base_dir.rglob("*.txt"):
                 try:
@@ -197,6 +223,33 @@ class RotationManager:
             logging.error(f"Error during file rotation check: {e}")
         finally:
             self._schedule_next_check()
+
+    def _check_inactive_handles(self, current_time: datetime.datetime):
+        """Check and close file handles that haven't been written to recently."""
+        try:
+            for route in list(self.file_handler.file_handles.keys()):
+                last_write = self.file_handler.last_write_time.get(route)
+                if last_write and (current_time - last_write) > self.inactive_threshold:
+                    logging.info(f"Route {route} inactive for >{self.inactive_threshold}, closing file")
+                    self.file_handler._close_and_rotate_file(route)
+        except Exception as e:
+            logging.error(f"Error checking inactive handles: {e}")
+
+    def _schedule_queue_check(self):
+        """Schedule the next queued files check."""
+        if self._running:
+            self._queue_timer = threading.Timer(self.queue_check_interval, self._process_queued_files)
+            self._queue_timer.daemon = True
+            self._queue_timer.start()
+
+    def _process_queued_files(self):
+        """Process any queued files for rotation."""
+        try:
+            self.file_handler.rotate_queued_files()
+        except Exception as e:
+            logging.error(f"Error processing queued files: {e}")
+        finally:
+            self._schedule_queue_check()
 
 
 def parse_args() -> argparse.Namespace:
@@ -235,18 +288,6 @@ def parse_args() -> argparse.Namespace:
     data_group = parser.add_argument_group("Data Collection Settings")
     data_group.add_argument("--topics", nargs="+", required=True, help="List of MQTT topics to subscribe to")
     data_group.add_argument("--output-dir", type=Path, required=True, help="Directory to store output files")
-    data_group.add_argument(
-        "--max-file-size",
-        type=int,
-        default=DEFAULT_MAX_FILE_SIZE,
-        help="Maximum file size in bytes before rotation",
-    )
-    data_group.add_argument(
-        "--rotation-interval",
-        type=int,
-        default=DEFAULT_ROTATION_INTERVAL,
-        help="Time in hours before file rotation",
-    )
 
     # Logging arguments
     log_group = parser.add_argument_group("Logging Settings")
@@ -258,7 +299,7 @@ def parse_args() -> argparse.Namespace:
 
     # Configure logging
     logging.basicConfig(
-        level=args.log, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        level=args.log, format="%(asctime)s.%(msecs)03d - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
 
     # Create output directory
@@ -288,7 +329,7 @@ def on_connect(client: mqtt.Client, userdata: Dict, flags, reason_code, properti
         logging.error(f"Connection failed: {MQTT_RC_CODES.get(reason_code, f'Unknown error ({reason_code})')}")
 
 
-def on_disconnect(client: mqtt.Client, userdata: Dict, reason_code, properties=None):
+def on_disconnect(client: mqtt.Client, userdata: Dict, flags, reason_code: int, properties=None):
     """Callback for when the client disconnects from the broker."""
     if reason_code != 0:
         logging.warning("Unexpected disconnection, will automatically reconnect...")
@@ -324,7 +365,7 @@ def setup_mqtt_client(args: argparse.Namespace) -> mqtt.Client:
     client_kwargs = {}
     client_kwargs["client_id"] = args.client_id or f"hsl_dumper_{uuid.uuid4().hex[:8]}"
 
-    file_handler = FileHandler(args.output_dir, args.max_file_size, args.rotation_interval)
+    file_handler = FileHandler(args.output_dir)
 
     client = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION2,
@@ -378,8 +419,8 @@ def main():
         # Create and start rotation manager
         rotation_manager = RotationManager(
             base_dir=args.output_dir,
-            check_interval=timedelta(hours=1),  # Check every hour
-            min_age=timedelta(hours=3),  # Rotate files older than 3 hours
+            check_interval=timedelta(minutes=15),  # Check every x minutes
+            min_age=timedelta(hours=2),  # Rotate files older than 3 hours
             file_handler=file_handler,
         )
 
