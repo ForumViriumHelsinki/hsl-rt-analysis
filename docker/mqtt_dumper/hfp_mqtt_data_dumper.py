@@ -102,11 +102,11 @@ class FileHandler:
         """Close a file handle and queue file for rotation."""
         if route in self.file_handles:
             filepath, handle = self.file_handles[route]
+            handle.close()
             self.files_to_rotate.append(filepath)
+            del self.file_handles[route]
             logging.info(f"Queueing file for rotation: {filepath}")
             logging.info(f"Number of files to rotate: {len(self.files_to_rotate)}")
-            handle.close()
-            del self.file_handles[route]
 
     def rotate_queued_files(self):
         """Rotate files that have been queued for rotation."""
@@ -162,6 +162,7 @@ class RotationManager:
         self._timer = None
         self._queue_timer = None  # New timer for queued files
         self._running = False
+        self._check_files_running = False
         self.inactive_threshold = timedelta(minutes=70)
         self.queue_check_interval = 300  # Seconds between queue checks
 
@@ -199,6 +200,11 @@ class RotationManager:
 
     def _check_files(self):
         """Check and rotate old files."""
+        if self._check_files_running:
+            logging.warning("File check already running, skipping")
+            return
+
+        self._check_files_running = True
         try:
             now = datetime.datetime.now(datetime.UTC)
             logging.info(f"Checking files at {now}")
@@ -222,6 +228,7 @@ class RotationManager:
         except Exception as e:
             logging.error(f"Error during file rotation check: {e}")
         finally:
+            self._check_files_running = False
             self._schedule_next_check()
 
     def _check_inactive_handles(self, current_time: datetime.datetime):
