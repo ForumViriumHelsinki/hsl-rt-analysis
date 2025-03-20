@@ -5,5 +5,4 @@
       "package-name": "mqtt-dumper"
     }
   },
-  "plugins": ["python-workspace"]
 }
