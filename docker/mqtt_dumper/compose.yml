@@ -1,10 +1,10 @@
 services:
   mqtt_dumper_base: &mqtt_dumper_base
+    image: forumviriumhelsinki/containers-mqtt-dumper
+    build:
+      context: .
     profiles:
       - "donotstart"
-    build:
-      context: ../..
-      dockerfile: docker/mqtt_dumper/Dockerfile
     volumes:
       - ../../data/raw:/app/data
     restart: unless-stopped
