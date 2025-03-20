@@ -240,6 +240,8 @@ def save_dataframe(df: pd.DataFrame, outfile: Path, outfile_format: List[str]):
             geometry = [Point(xy) for xy in zip(df["long"], df["lat"])]
             # Convert to GeoDataFrame, in WGS84 coordinate system
             gdf = gpd.GeoDataFrame(df, geometry=geometry, crs="EPSG:4326")
+            # Drop longitude and latitude columns
+            gdf = gdf.drop(columns=["long", "lat"])
             # Save as GeoParquet
             gdf.to_parquet(full_path, index=False)
         elif of.endswith("parquet"):
