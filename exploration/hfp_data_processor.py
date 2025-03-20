@@ -366,7 +366,7 @@ def process_route_group(date: str, route_group: str, files: List[str], output_di
 
     if not df.empty:
         # Convert timestamp and optimize data types
-        df["ts"] = pd.to_datetime(df["tst"])
+        df["ts"] = pd.to_datetime(df["tst"], format="ISO8601")
         df["oday_start"] = pd.to_datetime(df["oday"] + " " + df["start"])
 
         # Drop original timestamp fields
@@ -374,12 +374,12 @@ def process_route_group(date: str, route_group: str, files: List[str], output_di
 
         # Fill NA values with sensible defaults before type conversion
         na_fill_values = {
-            "dir": 1,  # Oletussuunta 1
-            "drst": False,  # Oletuksena ovet kiinni
-            "hdg": -1,  # -1 tarkoittaa puuttuvaa suuntaa
-            "occu": 0,  # Oletuksena tyhjä
-            "oper": 0,  # Tuntematon operaattori
-            "veh": 0,  # Tuntematon ajoneuvo
+            "dir": 0,  # dir can be 1 or 2
+            "drst": False,  # Door status, False means closed
+            "hdg": -1,  # Heading, -1 means unknown
+            "occu": 0,  # Occupancy, 0-100
+            "oper": 0,  # Operator, 0 means unknown
+            "veh": 0,  # Vehicle, 0 means unknown
         }
         df = df.fillna(na_fill_values)
 
