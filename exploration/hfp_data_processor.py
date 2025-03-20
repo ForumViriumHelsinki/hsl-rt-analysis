@@ -28,9 +28,52 @@ Routes from 5000 to 5999, 6000 to 6999, 7000 to 7999, 9000 to 9999 are are aggre
 
 Files are stored in the output directory with the following naming convention:
 
-%Y-%m-%d/hfp_%y%m%d_<route>.geoparquet
+YYYY-MM-DD/<route>_YYYYMMDD.geoparquet
 
 where <year> is the year, <month> is the month, <day> is the day and <route> is the first 4 digits of the route number.
+
+Data field descriptions (from Digitransit API documentation):
+https://digitransit.fi/en/developers/apis/5-realtime-api/vehicle-positions/high-frequency-positioning/#the-payload
+
+Field   Type    Description
+desi    str     Route number visible to passengers.
+dir     str     Route direction of the trip. After type conversion matches direction_id in GTFS and the topic. Either "1" or "2".
+oper    int     Unique ID of the operator running the trip (i.e. this value can be different than the operator ID in the topic,
+                for example if the service has been subcontracted to another operator). The unique ID does not have prefix zeroes here.
+veh     int     Vehicle number that can be seen painted on the side of the vehicle, often next to the front door.
+                Different operators may use overlapping vehicle numbers. Matches vehicle_number in the topic except without the prefix zeroes.
+tst     str     UTC timestamp with millisecond precision from the vehicle in ISO 8601 format (yyyy-MM-dd'T'HH:mm:ss.SSSZ).
+tsi     int     Unix time in seconds from the vehicle.
+spd     float   Speed of the vehicle, in meters per second (m/s).
+hdg     int     Heading of the vehicle, in degrees (⁰) starting clockwise from geographic north. Valid values are on the closed interval [0, 360].
+lat     float   WGS 84 latitude in degrees. null if location is unavailable.
+long    float   WGS 84 longitude in degrees. null if location is unavailable.
+acc     float   Acceleration (m/s^2), calculated from the speed on this and the previous message.
+                Negative values indicate that the speed of the vehicle is decreasing.
+dl      int     Offset from the scheduled timetable in seconds (s). Negative values indicate lagging behind the schedule,
+                positive values running ahead of schedule.
+odo     int     The odometer reading in meters (m) since the start of the trip. Currently the values not very reliable.
+drst    int     Door status. 0 if all the doors are closed. 1 if any of the doors are open.
+oday    str     Operating day of the trip. The exact time when an operating day ends depends on the route. For most routes,
+                the operating day ends at 4:30 AM on the next day. In that case, for example, the final moment of the operating day "2018-04-05"
+                would be at 2018-04-06T04:30 local time.
+jrn     int     Internal journey descriptor, not meant to be useful for external use.
+line    int     Internal line descriptor, not meant to be useful for external use.
+start   str     Scheduled start time of the trip, i.e. the scheduled departure time from the first stop of the trip. The format follows
+                HH:mm in 24-hour local time, not the 30-hour overlapping operating days present in GTFS. Matches start_time in the topic.
+loc     str     Location source, either GPS, ODO, MAN, DR or N/A.
+                GPS - location is received from GPS
+                ODO - location is calculated based on odometer value
+                MAN - location is specified manually
+                DR - location is calculated using dead reckoning (used in tunnels and other locations without GPS signal)
+                N/A - location is unavailable
+stop    str     ID of the stop related to the event (e.g. ID of the stop where the vehicle departed from in case of dep event or the stop
+                 where the vehicle currently is in case of vp event). null if the event is not related to any stop.
+route   str     ID of the route the vehicle is currently running on. Matches route_id in the topic.
+occu    int     Integer describing passenger occupancy level of the vehicle. Valid values are on interval [0, 100].
+                Currently passenger occupancy level is only available for Suomenlinna ferries as a proof-of-concept.
+                The value will be available shortly after departure when the ferry operator has registered passenger count for the journey.
+
 """
 
 import argparse
@@ -319,32 +362,47 @@ def process_route_group(date: str, route_group: str, files: List[str], output_di
     # Process all files and create the DataFrame
     df = process_files(files)
 
-    # Create output path using pathlib
+    if not df.empty:
+        # Convert timestamp and optimize data types
+        df["ts"] = pd.to_datetime(df["tst"])
+        df["oday_start"] = pd.to_datetime(df["oday"] + " " + df["start"])
+
+        # Drop original timestamp fields
+        df = df.drop(columns=["tst", "tsi", "oday", "start"])
+
+        # Fill NA values with sensible defaults before type conversion
+        na_fill_values = {
+            "dir": 1,  # Oletussuunta 1
+            "drst": False,  # Oletuksena ovet kiinni
+            "hdg": -1,  # -1 tarkoittaa puuttuvaa suuntaa
+            "occu": 0,  # Oletuksena tyhjä
+            "oper": 0,  # Tuntematon operaattori
+            "veh": 0,  # Tuntematon ajoneuvo
+        }
+        df = df.fillna(na_fill_values)
+
+        # Convert data types
+        dtype_conversions = {
+            "dir": "uint8",
+            "drst": "bool",
+            "hdg": "int16",
+            "occu": "uint8",
+            "oper": "uint16",
+            "veh": "uint16",
+        }
+        df = df.astype(dtype_conversions)
+
+        # Convert categorical columns
+        categorical_columns = ["loc", "desi", "route"]
+        for col in categorical_columns:
+            df[col] = df[col].astype("category")
+
+        # Sort by timestamp and vehicle
+        df = df.sort_values(["ts", "veh"])
+
+    # Create output path and save
     date_str = date.replace("-", "")
     output_path = pathlib.Path(output_dir) / date / f"{route_group}_{date_str}"
-
-    # Calculate additional columns for analysis
-    if not df.empty:
-        # Convert timestamp to datetime
-        df["timestamp"] = pd.to_datetime(df["tst"], format="ISO8601")
-        # Sort by vehicle and timestamp
-        df = df.sort_values(["timestamp", "veh"])
-        # Calculate speed changes (for deceleration detection)
-        # df["speed_diff"] = df.groupby("veh")["spd"].diff()
-
-        # Calculate time diff in seconds
-        # df["time_diff"] = df.groupby("veh")["tsi"].diff()
-
-        # Calculate acceleration explicitly (change in speed / change in time)
-        # This can be compared with the 'acc' value reported in the data
-        # df["calc_acc"] = df["speed_diff"] / df["time_diff"]
-
-        # Flag potential sudden braking events
-        # (this is just a simple heuristic, can be refined in analysis)
-        # df["potential_braking"] = (df["speed_diff"] < -1.5) & (df["time_diff"] < 3)
-
-    # Save the DataFrame
-    print(output_path, output_formats)
     save_dataframe(df, output_path, output_formats)
 
 
