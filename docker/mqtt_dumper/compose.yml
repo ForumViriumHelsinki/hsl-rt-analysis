@@ -36,7 +36,7 @@ services:
     volumes:
       - ../../data/raw/65_71_79:/app/data
     environment:
-      TOPICS: "/hfp/v2/journey/ongoing/+/bus/+/+/1079/#"
+      TOPICS: '"/hfp/v2/journey/ongoing/+/bus/+/+/1071/#" "/hfp/v2/journey/ongoing/+/bus/+/+/1065/#" "/hfp/v2/journey/ongoing/+/bus/+/+/1079/#"'
 
   hsl_dumper_all:
     <<: *mqtt_dumper_base
