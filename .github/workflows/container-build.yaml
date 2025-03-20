@@ -9,8 +9,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  APP_SLUG: mqtt-dumper
-  IMAGE_NAME: ${{ github.repository_owner }}/${{ env.APP_SLUG }}
+  IMAGE_NAME: ${{ github.repository_owner }}/mqtt-dumper
 
 jobs:
   build-and-push:
