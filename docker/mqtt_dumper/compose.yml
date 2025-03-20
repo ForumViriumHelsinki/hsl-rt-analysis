@@ -1,10 +1,10 @@
 services:
   mqtt_dumper_base: &mqtt_dumper_base
+    image: forumviriumhelsinki/containers-mqtt-dumper
+    build:
+      context: .
     profiles:
       - "donotstart"
-    build:
-      context: ../..
-      dockerfile: docker/mqtt_dumper/Dockerfile
     volumes:
       - ../../data/raw:/app/data
     restart: unless-stopped
@@ -19,29 +19,32 @@ services:
     container_name: hsl_dumper_2015
     volumes:
       - ../../data/raw/2015:/app/data
-    command: python hfp_mqtt_data_dumper.py --output-dir /app/data --log INFO --topics "/hfp/v2/journey/ongoing/+/tram/+/+/2015/#"
+    environment:
+      TOPICS: "/hfp/v2/journey/ongoing/+/tram/+/+/2015/#"
 
   hsl_dumper_koskelantie_50:
     <<: *mqtt_dumper_base
     container_name: hsl_dumper_koskelantie_50
     volumes:
       - ../../data/raw/koskelantie_50:/app/data
-    command: python hfp_mqtt_data_dumper.py --output-dir /app/data --log INFO --topics "/hfp/v2/journey/ongoing/+/bus/+/+/1057/+/+/+/+/+/60;24/29/15/#"
+    environment:
+      TOPICS: "/hfp/v2/journey/ongoing/+/bus/+/+/1057/+/+/+/+/+/60;24/29/15/#"
 
   hsl_dumper_65_71_79:
     <<: *mqtt_dumper_base
     container_name: hsl_dumper_65_71_79
     volumes:
       - ../../data/raw/65_71_79:/app/data
-    command: python hfp_mqtt_data_dumper.py --output-dir /app/data --log INFO --topics "/hfp/v2/journey/ongoing/+/bus/+/+/1071/#" "/hfp/v2/journey/ongoing/+/bus/+/+/1065/#" "/hfp/v2/journey/ongoing/+/bus/+/+/1079/#"
+    environment:
+      TOPICS: '"/hfp/v2/journey/ongoing/+/bus/+/+/1071/#" "/hfp/v2/journey/ongoing/+/bus/+/+/1065/#" "/hfp/v2/journey/ongoing/+/bus/+/+/1079/#"'
 
   hsl_dumper_all:
     <<: *mqtt_dumper_base
     container_name: hsl_dumper_all
     volumes:
       - ../../data/raw/all:/app/data
-    command: python hfp_mqtt_data_dumper.py --output-dir /app/data --log INFO --topics "/hfp/v2/journey/ongoing/#"
-
+    environment:
+      TOPICS: "/hfp/v2/journey/ongoing/#"
 
   # Example of additional dumper instance with different topics
   # mqtt_dumper_2:
