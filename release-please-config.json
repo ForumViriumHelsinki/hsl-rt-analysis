@@ -1,0 +1,8 @@
+{
+  "packages": {
+    "docker/mqtt_dumper": {
+      "release-type": "simple",
+      "package-name": "mqtt-dumper"
+    }
+  }
+}
