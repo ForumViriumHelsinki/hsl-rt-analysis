@@ -4,5 +4,5 @@
       "release-type": "simple",
       "package-name": "mqtt-dumper"
     }
-  },
+  }
 }
