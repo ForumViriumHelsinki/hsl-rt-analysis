@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, TextIO, Tuple
 
 import paho.mqtt.client as mqtt
+import sentry_sdk
 
 
 """
@@ -301,6 +302,10 @@ def parse_args() -> argparse.Namespace:
     log_group.add_argument(
         "--log", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Set logging level"
     )
+    # Sentry DSN argument
+    log_group.add_argument(
+        "--sentry-dsn", help="Sentry DSN for error reporting. Can also be set via SENTRY_DSN environment variable."
+    )
 
     args = parser.parse_args()
 
@@ -321,6 +326,28 @@ def parse_args() -> argparse.Namespace:
             )
 
     return args
+
+
+def sentry_init(args: argparse.Namespace):
+    """Initialize Sentry SDK if DSN is provided."""
+    dsn = args.sentry_dsn or os.environ.get("SENTRY_DSN")
+    if dsn and dsn.startswith("https"):
+        try:
+            sentry_sdk.init(
+                dsn=dsn,
+                # Set traces_sample_rate to 1.0 to capture 100%
+                # of transactions for performance monitoring.
+                traces_sample_rate=1.0,
+                # Set profiles_sample_rate to 1.0 to profile 100%
+                # of sampled transactions.
+                # We recommend adjusting this value in production.
+                profiles_sample_rate=1.0,
+            )
+            logging.info("Sentry SDK initialized.")
+        except Exception as e:
+            logging.error(f"Failed to initialize Sentry SDK: {e}")
+    else:
+        logging.info("Sentry DSN not found or invalid, skipping Sentry initialization.")
 
 
 def on_connect(client: mqtt.Client, userdata: Dict, flags, reason_code, properties=None):
@@ -413,6 +440,9 @@ def signal_handler(signum, frame):
 def main():
     # Parse arguments and configure logging
     args = parse_args()
+
+    # Initialize Sentry if configured
+    sentry_init(args)
 
     # Setup signal handlers
     signal.signal(signal.SIGTERM, signal_handler)
