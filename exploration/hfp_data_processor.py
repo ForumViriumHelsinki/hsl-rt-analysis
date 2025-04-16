@@ -7,6 +7,9 @@ Sample lines in raw data files:
 /hfp/v2/journey/ongoing/vp/bus/0022/01400/2212/1/Kauniala/11:26/2252204/5/60;24/27/08/15 {"VP": {"desi": "212", "dir": "1", "oper": 22, "veh": 1400, "tst": "2025-03-12T10:00:04.751Z", "tsi": 1741773604, "spd": 1.08, "hdg": 268, "lat": 60.201181, "long": 24.785763, "acc": 1.08, "dl": -120, "odo": 12579, "drst": 0, "oday": "2025-03-12", "jrn": 525, "line": 244, "start": "11:26", "loc": "GPS", "stop": 2252204, "route": "2212", "occu": 0}}
 /hfp/v2/journey/ongoing/vp/bus/0018/01095/1065/1/Veräjälaakso/11:55/1111117/5/60;24/19/75/71 {"VP": {"desi": "65", "dir": "1", "oper": 6, "veh": 1095, "tst": "2025-03-12T10:00:02.751Z", "tsi": 1741773602, "spd": 7.4, "hdg": 354, "lat": 60.177785, "long": 24.951814, "acc": -0.38, "dl": -70, "odo": 1139, "drst": 0, "oday": "2025-03-12", "jrn": 1089, "line": 850, "start": "11:55", "loc": "GPS", "stop": null, "route": "1065", "occu": 0}}
 
+Only VP (vehicle position) messages are stored in the parquet files.
+All other messages are stored in the compressed text files next to the parquet files.
+
 Source files are named using the following naming convention:
 
 <route>-<year>-<month>-<day>T<hour>.txt[.gz]
@@ -74,20 +77,45 @@ occu    int     Integer describing passenger occupancy level of the vehicle. Val
                 Currently passenger occupancy level is only available for Suomenlinna ferries as a proof-of-concept.
                 The value will be available shortly after departure when the ferry operator has registered passenger count for the journey.
 
+
 """
 
 import argparse
 import gzip
 import json
 import logging
+import os
 import pathlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import geopandas as gpd
 import pandas as pd
+import sentry_sdk
 from shapely.geometry import Point
 from tqdm import tqdm
+
+
+def sentry_init(args: argparse.Namespace):
+    """Initialize Sentry SDK if DSN is provided."""
+    dsn = args.sentry_dsn or os.environ.get("SENTRY_DSN")
+    if dsn and dsn.startswith("https"):
+        try:
+            sentry_sdk.init(
+                dsn=dsn,
+                # Set traces_sample_rate to 1.0 to capture 100%
+                # of transactions for performance monitoring.
+                traces_sample_rate=1.0,
+                # Set profiles_sample_rate to 1.0 to profile 100%
+                # of sampled transactions.
+                # We recommend adjusting this value in production.
+                profiles_sample_rate=1.0,
+            )
+            logging.info("Sentry SDK initialized.")
+        except Exception as e:
+            logging.error(f"Failed to initialize Sentry SDK: {e}")
+    else:
+        logging.info("Sentry DSN not found or invalid, skipping Sentry initialization.")
 
 
 def parse_args():
@@ -110,6 +138,9 @@ def parse_args():
         help="Output file format (geoparquet, parquet or csv)",
     )
     parser.add_argument("--outdir", required=True, help="Output directory.")
+    parser.add_argument(
+        "--sentry-dsn", help="Sentry DSN for error tracking. Can be set as environment variable SENTRY_DSN."
+    )
     parser.add_argument("--log", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], default="INFO")
     args = parser.parse_args()
     logging.basicConfig(
@@ -156,17 +187,20 @@ def is_within_bbox(lon: float, lat: float, bbox: Tuple[float, float, float, floa
     return lon_min <= lon <= lon_max and lat_min <= lat <= lat_max
 
 
-def process_file(file_path: str) -> List[Dict[str, Any]]:
+def process_file(file_path: str) -> Tuple[List[Dict[str, Any]], List[str]]:
     """
-    Process a single HFP data file with filtering.
+    Process a single HFP data file, separating VP records and other lines.
 
     Args:
         file_path: Path to the HFP data file
 
     Returns:
-        List of parsed records
+        A tuple containing:
+        - List of parsed VP records
+        - List of raw lines for non-VP messages
     """
-    results = []
+    vp_records = []
+    other_lines = []
 
     # Check if the file is gzipped
     open_func, mode = (gzip.open, "rt") if file_path.endswith(".gz") else (open, "r")
@@ -174,55 +208,69 @@ def process_file(file_path: str) -> List[Dict[str, Any]]:
     # Process the file with a progress bar
     with open_func(file_path, mode) as f:
         for line in tqdm(f, desc=f"Processing {Path(file_path).name}", unit="lines", total=None):
-            record = parse_hfp_line(line)
+            record = parse_hfp_line(line.strip())  # Ensure no leading/trailing whitespace
             if record is None:
-                continue
+                # If parsing failed or it's not a VP message, store the raw line
+                # We check if '/vp/' is in the topic part just in case parsing failed for a VP line
+                json_start = line.find("{")
+                topic = line[:json_start].strip() if json_start != -1 else ""
+                if "/vp/" in topic:
+                    logging.warning(f"Could not parse potential VP line, storing raw: {line.strip()}")
+                other_lines.append(line.strip())  # Store original line
+            else:
+                # Successfully parsed VP record
+                vp_records.append(record)
 
-            results.append(record)
-
-    return results
+    return vp_records, other_lines
 
 
-def process_files(file_paths: List[str], chunk_size: int = 100000) -> pd.DataFrame:
+def process_files(file_paths: List[str], chunk_size: int = 100000) -> Tuple[pd.DataFrame, List[str]]:
     """
-    Process multiple HFP files in chunks to avoid loading everything into memory.
+    Process multiple HFP files in chunks, separating VP data and other lines.
 
     Args:
         file_paths: List of HFP data files
-        chunk_size: Number of records to process before creating a DataFrame
+        chunk_size: Number of records to process before creating a DataFrame for VP data
 
     Returns:
-        DataFrame with all the processed records
+        A tuple containing:
+        - DataFrame with all the processed VP records
+        - List of all raw lines for non-VP messages
     """
     all_dfs = []
-    current_chunk = []
+    all_other_lines = []
+    current_vp_chunk = []
 
     for file_path in file_paths:
-        print(f"Processing file: {file_path}")
+        logging.info(f"Processing file: {file_path}")
 
         # Process each file
-        records = process_file(file_path)
+        vp_records, other_lines_from_file = process_file(file_path)
 
-        # Add records to the current chunk
-        current_chunk.extend(records)
+        # Add records/lines to respective lists
+        current_vp_chunk.extend(vp_records)
+        all_other_lines.extend(other_lines_from_file)
 
-        # If the chunk is large enough, convert to DataFrame and add to the list
-        if len(current_chunk) >= chunk_size:
-            df_chunk = pd.DataFrame(current_chunk)
+        # If the VP chunk is large enough, convert to DataFrame and add to the list
+        if len(current_vp_chunk) >= chunk_size:
+            df_chunk = pd.DataFrame(current_vp_chunk)
             all_dfs.append(df_chunk)
-            current_chunk = []  # Reset the chunk
+            current_vp_chunk = []  # Reset the chunk
 
-    # Process the remaining records
-    if current_chunk:
-        df_chunk = pd.DataFrame(current_chunk)
+    # Process the remaining VP records
+    if current_vp_chunk:
+        df_chunk = pd.DataFrame(current_vp_chunk)
         all_dfs.append(df_chunk)
 
-    # Combine all DataFrames
+    # Combine all VP DataFrames
     if not all_dfs:
-        return pd.DataFrame()  # Return empty DataFrame if no data
-    df = pd.concat(all_dfs, ignore_index=True)
-    print(df.head())
-    return df
+        vp_df = pd.DataFrame()  # Return empty DataFrame if no VP data
+    else:
+        vp_df = pd.concat(all_dfs, ignore_index=True)
+        logging.info(f"Combined VP DataFrame head:\n{vp_df.head()}")
+
+    logging.info(f"Total non-VP lines collected: {len(all_other_lines)}")
+    return vp_df, all_other_lines
 
 
 def save_dataframe(df: pd.DataFrame, outfile: Path, outfile_format: List[str]):
@@ -252,6 +300,21 @@ def save_dataframe(df: pd.DataFrame, outfile: Path, outfile_format: List[str]):
             raise ValueError("Output file must have .parquet, .geoparquet, or .csv extension")
 
     print(f"Data saved successfully. Total records: {len(df)}")
+
+
+def save_other_messages(lines: List[str], outfile_path: Path):
+    """Save the list of non-VP message lines to a gzipped text file."""
+    # Ensure the output directory exists
+    outfile_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Saving {len(lines)} other messages to {outfile_path}")
+    try:
+        with gzip.open(outfile_path, "wt", encoding="utf-8") as f:
+            for line in lines:
+                f.write(line + "\n")
+        print(f"Other messages saved successfully to {outfile_path}")
+    except Exception as e:
+        logging.error(f"Failed to save other messages to {outfile_path}: {e}")
 
 
 def parse_route_from_filename(filename: str) -> Optional[str]:
@@ -351,26 +414,34 @@ def group_input_files(file_paths: List[str]) -> Dict[str, Dict[str, List[str]]]:
 
 def process_route_group(date: str, route_group: str, files: List[str], output_dir: str, output_formats: List[str]):
     """
-    Process all files for a single route group.
+    Process all files for a single route group, saving VP data and other messages separately.
 
     Args:
         date: Date string (YYYY-MM-DD)
         route_group: Route group identifier
         files: List of input files
         output_dir: Base output directory
-        output_formats: List of output formats to generate
+        output_formats: List of output formats to generate for VP data
     """
-    print(f"Processing route group: {route_group}")
-    # Process all files and create the DataFrame
-    df = process_files(files)
+    print(f"Processing route group: {route_group} for date {date}")
+    # Process all files and create the DataFrame for VP data and list for other lines
+    df_vp, other_lines = process_files(files)
 
-    if not df.empty:
+    # Define base output path components
+    date_nodash = date.replace("-", "")
+    output_base_path = pathlib.Path(output_dir) / date / f"{route_group}_{date_nodash}"
+
+    # Process and save VP data if any exists
+    if not df_vp.empty:
+        print(f"Processing {len(df_vp)} VP records for {route_group} on {date}")
         # Convert timestamp and optimize data types
-        df["ts"] = pd.to_datetime(df["tst"], format="ISO8601")
-        df["oday_start"] = pd.to_datetime(df["oday"] + " " + df["start"])
+        df_vp["ts"] = pd.to_datetime(df_vp["tst"], format="ISO8601")
+        # Handle potential errors during datetime conversion if needed
+        # df_vp["oday_start"] = pd.to_datetime(df_vp["oday"] + " " + df_vp["start"], errors='coerce') # Example with error handling
+        df_vp["oday_start"] = pd.to_datetime(df_vp["oday"] + " " + df_vp["start"])
 
         # Drop original timestamp fields
-        df = df.drop(columns=["tst", "tsi", "oday", "start"])
+        df_vp = df_vp.drop(columns=["tst", "tsi", "oday", "start"])
 
         # Fill NA values with sensible defaults before type conversion
         na_fill_values = {
@@ -380,36 +451,81 @@ def process_route_group(date: str, route_group: str, files: List[str], output_di
             "occu": 0,  # Occupancy, 0-100
             "oper": 0,  # Operator, 0 means unknown
             "veh": 0,  # Vehicle, 0 means unknown
+            "lat": pd.NA,  # Use pandas NA for float nulls
+            "long": pd.NA,  # Use pandas NA for float nulls
+            "acc": pd.NA,
+            "dl": pd.NA,
+            "odo": pd.NA,
+            "stop": pd.NA,
+            "jrn": pd.NA,
+            "line": pd.NA,
+            "spd": pd.NA,
         }
-        df = df.fillna(na_fill_values)
+        # df_vp = df_vp.fillna(na_fill_values) # Careful: fillna converts int columns with NA to float
+        for col, val in na_fill_values.items():
+            if col in df_vp.columns:
+                # Skip drst, handle it specifically later
+                if col == "drst":
+                    continue
+                df_vp[col] = df_vp[col].fillna(val)
+
+        # Handle drst column explicitly to convert 0/1 or 0.0/1.0 to boolean
+        if "drst" in df_vp.columns:
+            # First convert to numeric, coercing errors to NaN (becomes pd.NA)
+            df_vp["drst"] = pd.to_numeric(df_vp["drst"], errors="coerce")
+            # Map numeric values to boolean, keep NA as NA
+            # 1.0 means True (doors open), 0.0 means False (doors closed)
+            df_vp["drst"] = (df_vp["drst"] == 1.0).astype("boolean")
 
         # Convert data types
         dtype_conversions = {
-            "dir": "uint8",
-            "drst": "bool",
-            "hdg": "int16",
-            "occu": "uint8",
-            "oper": "uint16",
-            "veh": "uint16",
+            "dir": "UInt8",  # Use nullable Int type
+            # "drst": "boolean", # Already handled above
+            "hdg": "Int16",  # Use nullable Int type
+            "occu": "UInt8",  # Use nullable Int type
+            "oper": "UInt16",  # Use nullable Int type
+            "veh": "UInt16",  # Use nullable Int type
+            "dl": "Int16",  # Nullable signed integer for delay (-32k to +32k seconds)
+            "odo": "UInt32",  # Nullable unsigned integer for odometer
+            "stop": "UInt32",  # Nullable unsigned integer for stop ID
+            "jrn": "UInt16",  # Nullable unsigned integer for journey ID
+            "line": "UInt16",  # Nullable unsigned integer for line ID
         }
-        df = df.astype(dtype_conversions)
+        for col, dtype in dtype_conversions.items():
+            if col in df_vp.columns:
+                try:
+                    df_vp[col] = df_vp[col].astype(dtype)
+                except Exception as e:
+                    logging.warning(f"Could not convert column {col} to {dtype}: {e}")
 
         # Convert categorical columns
         categorical_columns = ["loc", "desi", "route"]
         for col in categorical_columns:
-            df[col] = df[col].astype("category")
+            if col in df_vp.columns:
+                df_vp[col] = df_vp[col].astype("category")
 
         # Sort by timestamp and vehicle
-        df = df.sort_values(["ts", "veh"])
+        # df_vp = df_vp.sort_values(["ts", "veh"]) # Sorting can be slow, consider if necessary here or later
+        df_vp = df_vp.sort_values(["ts"])  # Sort primarily by time
 
-    # Create output path and save
-    date_str = date.replace("-", "")
-    output_path = pathlib.Path(output_dir) / date / f"{route_group}_{date_str}"
-    save_dataframe(df, output_path, output_formats)
+        # Save the processed VP DataFrame
+        save_dataframe(df_vp, output_base_path, output_formats)
+    else:
+        print(f"No VP records found for {route_group} on {date}. Skipping VP file save.")
+
+    # Save other messages if any exist
+    if other_lines:
+        output_path_other = output_base_path.parent / f"{output_base_path.name}_other_messages.txt.gz"
+        save_other_messages(other_lines, output_path_other)
+    else:
+        print(f"No other messages found for {route_group} on {date}. Skipping other messages file save.")
 
 
 def main():
     args = parse_args()
+
+    # Initialize Sentry if configured
+    sentry_init(args)
 
     # Group files by date and route/route group
     grouped_files = group_input_files(args.rt_files)
