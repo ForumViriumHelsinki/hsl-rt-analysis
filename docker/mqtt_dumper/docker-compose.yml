@@ -38,14 +38,8 @@ services:
   hsl_dumper_all:
     <<: *mqtt_dumper_base
     container_name: hsl_dumper_all
+    env_file:
+      - .env.all
     volumes:
       - ../../data/raw/all:/app/data
     command: python hfp_mqtt_data_dumper.py --output-dir /app/data --log INFO --topics "/hfp/v2/journey/ongoing/#"
-
-
-  # Example of additional dumper instance with different topics
-  # mqtt_dumper_2:
-  #   extends: mqtt_dumper
-  #   environment:
-  #     - MQTT_TOPICS=${MQTT_TOPICS_2}
-  #   command: python mqtt_dumper.py --output-dir /app/data --topics ${MQTT_TOPICS_2}
