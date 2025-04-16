@@ -29,7 +29,7 @@ The main goal is to analyze high-frequency GPS positioning data from public tran
 ## Data Source
 
 The project uses High Frequency Positioning (HFP) data from public transport vehicles. The data is stored in text files captured directly from MQTT topics and is available at:
-- https://bri3.fvh.io/opendata/hsl-rt/
+- https://bri3.fvh.io/hsl-rt/
 
 Download one or more of the files and place them in the `data/raw/` directory.
 
