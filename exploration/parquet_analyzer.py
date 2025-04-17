@@ -41,7 +41,7 @@ def analyze_parquet(file_path):
         try:
             df = gpd.read_parquet(file_path)
             is_geo = True
-        except (gpd.io.file.DriverError, ValueError):
+        except (ValueError, TypeError):
             # DriverError occurs when file is not a valid GeoParquet
             # ValueError occurs when geometry column is missing or invalid
             df = pd.read_parquet(file_path)
@@ -72,9 +72,17 @@ def analyze_parquet(file_path):
         for dtype, count in dtypes_summary.items():
             print(f"{dtype}: {count} columns")
 
+        print("\n--- COLUMN NAMES AND TYPES ---")
+        for col_name, dtype in df.dtypes.items():
+            print(f"- {col_name}: {dtype}")
+
         # Show first rows
         print("\n--- SAMPLE DATA (first 5 rows) ---")
         print(df.head().to_string())
+
+        # Show random rows
+        print("\n--- SAMPLE DATA (random rows) ---")
+        print(df.sample(5).to_string())
 
         # Calculate missing values
         print("\n--- MISSING VALUES ---")
@@ -120,6 +128,7 @@ def analyze_parquet(file_path):
 
     except Exception as e:
         print(f"Error analyzing file: {str(e)}")
+        raise e
         sys.exit(1)
 
 
