@@ -477,6 +477,16 @@ def process_route_group(date: str, route_group: str, files: List[str], output_di
             # 1.0 means True (doors open), 0.0 means False (doors closed)
             df_vp["drst"] = (df_vp["drst"] == 1.0).astype("boolean")
 
+        # Check dl column for values outside Int16 range before conversion
+        if "dl" in df_vp.columns:
+            # Ensure dl is numeric first, coercing errors
+            df_vp["dl"] = pd.to_numeric(df_vp["dl"], errors="coerce")
+            # Define Int16 limits
+            int16_min = -32768
+            int16_max = 32767
+            # Set values outside the range to pd.NA
+            df_vp.loc[~df_vp["dl"].between(int16_min, int16_max, inclusive="both"), "dl"] = pd.NA
+
         # Convert data types
         dtype_conversions = {
             "dir": "UInt8",  # Use nullable Int type
