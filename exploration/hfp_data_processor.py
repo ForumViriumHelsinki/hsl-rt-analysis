@@ -490,6 +490,8 @@ def process_route_group(date: str, route_group: str, files: List[str], output_di
             "stop": "UInt32",  # Nullable unsigned integer for stop ID
             "jrn": "UInt16",  # Nullable unsigned integer for journey ID
             "line": "UInt16",  # Nullable unsigned integer for line ID
+            "spd": "float32",  # Speed in m/s
+            "acc": "float32",  # Acceleration in m/s^2
         }
         for col, dtype in dtype_conversions.items():
             if col in df_vp.columns:
