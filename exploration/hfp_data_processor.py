@@ -92,7 +92,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import geopandas as gpd
 import pandas as pd
 import sentry_sdk
-from shapely.geometry import Point
 from tqdm import tqdm
 
 
@@ -284,11 +283,12 @@ def save_dataframe(df: pd.DataFrame, outfile: Path, outfile_format: List[str]):
         full_path = str(outfile) + "." + of
         print(f"Saving data to {full_path}")
         if of.endswith("geoparquet"):
-            # Create geometry column from lat/long
-            geometry = [Point(xy) for xy in zip(df["long"], df["lat"])]
+            # Create geometry column from lat/long using geopandas helper function
+            # This correctly handles missing values (pd.NA)
+            geometry = gpd.points_from_xy(df["long"], df["lat"])
             # Convert to GeoDataFrame, in WGS84 coordinate system
             gdf = gpd.GeoDataFrame(df, geometry=geometry, crs="EPSG:4326")
-            # Drop longitude and latitude columns
+            # Drop longitude and latitude columns now that geometry is created
             gdf = gdf.drop(columns=["long", "lat"])
             # Save as GeoParquet
             gdf.to_parquet(full_path, index=False)
@@ -458,6 +458,13 @@ def process_route_group(date: str, route_group: str, files: List[str], output_di
             # Remove rows with NaT timestamps
             df_vp = df_vp[~invalid_ts_mask].copy()  # Use copy to avoid SettingWithCopyWarning
 
+        # Drop rows with missing latitude or longitude BEFORE further processing
+        original_count = len(df_vp)
+        df_vp = df_vp.dropna(subset=["lat", "long"])
+        dropped_count = original_count - len(df_vp)
+        if dropped_count > 0:
+            logging.info(f"Dropped {dropped_count} rows with missing lat/long values for {route_group} on {date}.")
+
         # Handle potential errors during datetime conversion if needed
         # df_vp["oday_start"] = pd.to_datetime(df_vp["oday"] + " " + df_vp["start"], errors='coerce') # Example with error handling
         df_vp["oday_start"] = pd.to_datetime(df_vp["oday"] + " " + df_vp["start"])
@@ -523,13 +530,21 @@ def process_route_group(date: str, route_group: str, files: List[str], output_di
             "stop": "UInt32",  # Nullable unsigned integer for stop ID
             "jrn": "UInt16",  # Nullable unsigned integer for journey ID
             "line": "UInt16",  # Nullable unsigned integer for line ID
-            "spd": "float32",  # Speed in m/s
-            "acc": "float32",  # Acceleration in m/s^2
+            "lat": "float64",  # Latitude (will use nullable Float64)
+            "long": "float64",  # Longitude (will use nullable Float64)
+            "spd": "float32",  # Speed in m/s (will use nullable Float32)
+            "acc": "float32",  # Acceleration in m/s^2 (will use nullable Float32)
         }
         for col, dtype in dtype_conversions.items():
             if col in df_vp.columns:
                 try:
-                    df_vp[col] = df_vp[col].astype(dtype)
+                    # Use pd.to_numeric for float types to handle errors and NA correctly
+                    if dtype.startswith("float"):
+                        # Use Float64 for coordinates, Float32 for others
+                        pd_dtype = "Float64" if col in ["lat", "long"] else "Float32"
+                        df_vp[col] = pd.to_numeric(df_vp[col], errors="coerce").astype(pd_dtype)
+                    else:
+                        df_vp[col] = df_vp[col].astype(dtype)  # Existing nullable Int types handle NA
                 except Exception as e:
                     logging.warning(f"Could not convert column {col} to {dtype}: {e}")
 
