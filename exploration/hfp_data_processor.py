@@ -435,12 +435,35 @@ def process_route_group(date: str, route_group: str, files: List[str], output_di
     if not df_vp.empty:
         print(f"Processing {len(df_vp)} VP records for {route_group} on {date}")
         # Convert timestamp and optimize data types
-        df_vp["ts"] = pd.to_datetime(df_vp["tst"], format="ISO8601")
+        # Store original tst for logging purposes before converting to datetime
+        original_tst = df_vp["tst"].copy()
+        # Convert tst to datetime, coercing errors to NaT
+        df_vp["ts"] = pd.to_datetime(df_vp["tst"], errors="coerce")
+
+        # Identify rows with NaT timestamps
+        invalid_ts_mask = df_vp["ts"].isna()
+        if invalid_ts_mask.any():
+            invalid_rows = df_vp[invalid_ts_mask]
+            # Log the number of invalid records found
+            logging.warning(
+                f"Found {len(invalid_rows)} records with invalid timestamps in {files} for {route_group} on {date}. Removing them."
+            )
+            for index, row in invalid_rows.iterrows():
+                # Use the original tst value for logging
+                original_invalid_tst = original_tst.loc[index]
+                logging.warning(
+                    f"Invalid timestamp format found and removed: '{original_invalid_tst}' "
+                    f"(route_group: {route_group}, date: {date}, original_index: {index})"
+                )
+            # Remove rows with NaT timestamps
+            df_vp = df_vp[~invalid_ts_mask].copy()  # Use copy to avoid SettingWithCopyWarning
+
         # Handle potential errors during datetime conversion if needed
         # df_vp["oday_start"] = pd.to_datetime(df_vp["oday"] + " " + df_vp["start"], errors='coerce') # Example with error handling
         df_vp["oday_start"] = pd.to_datetime(df_vp["oday"] + " " + df_vp["start"])
 
         # Drop original timestamp fields
+        # Keep original tst column until after error handling for logging
         df_vp = df_vp.drop(columns=["tst", "tsi", "oday", "start"])
 
         # Fill NA values with sensible defaults before type conversion
