@@ -437,8 +437,8 @@ def process_route_group(date: str, route_group: str, files: List[str], output_di
         # Convert timestamp and optimize data types
         # Store original tst for logging purposes before converting to datetime
         original_tst = df_vp["tst"].copy()
-        # Convert tst to datetime, coercing errors to NaT
-        df_vp["ts"] = pd.to_datetime(df_vp["tst"], errors="coerce")
+        # Convert tst to datetime, coercing errors to NaT and handling mixed ISO8601 formats
+        df_vp["ts"] = pd.to_datetime(df_vp["tst"], format="ISO8601", errors="coerce")
 
         # Identify rows with NaT timestamps
         invalid_ts_mask = df_vp["ts"].isna()
