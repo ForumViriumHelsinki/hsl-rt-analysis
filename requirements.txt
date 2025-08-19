@@ -12,43 +12,43 @@ blinker==1.9.0
     #   streamlit
 branca==0.8.1
     # via folium
-cachetools==5.5.2
+cachetools==6.1.0
     # via streamlit
-certifi==2025.1.31
+certifi==2025.8.3
     # via
     #   pyogrio
     #   pyproj
     #   requests
     #   sentry-sdk
-charset-normalizer==3.4.1
+charset-normalizer==3.4.3
     # via requests
-click==8.1.8
+click==8.2.1
     # via
     #   flask
     #   streamlit
-contourpy==1.3.2
+contourpy==1.3.3
     # via matplotlib
 cycler==0.12.1
     # via matplotlib
-dash==3.0.3
+dash==3.2.0
     # via hsl-rt-analysis (pyproject.toml)
 dtaidistance==2.3.13
     # via hsl-rt-analysis (pyproject.toml)
-flask==3.0.3
+flask==3.1.1
     # via dash
-folium==0.19.5
+folium==0.20.0
     # via hsl-rt-analysis (pyproject.toml)
-fonttools==4.57.0
+fonttools==4.59.1
     # via matplotlib
-geopandas==1.0.1
+geopandas==1.1.1
     # via hsl-rt-analysis (pyproject.toml)
 gitdb==4.0.12
     # via gitpython
-gitpython==3.1.44
+gitpython==3.1.45
     # via streamlit
 idna==3.10
     # via requests
-importlib-metadata==8.6.1
+importlib-metadata==8.7.0
     # via dash
 itsdangerous==2.2.0
     # via flask
@@ -59,29 +59,30 @@ jinja2==3.1.6
     #   flask
     #   folium
     #   pydeck
-joblib==1.4.2
+joblib==1.5.1
     # via scikit-learn
-jsonschema==4.23.0
+jsonschema==4.25.1
     # via altair
-jsonschema-specifications==2024.10.1
+jsonschema-specifications==2025.4.1
     # via jsonschema
-kiwisolver==1.4.8
+kiwisolver==1.4.9
     # via matplotlib
 markupsafe==3.0.2
     # via
+    #   flask
     #   jinja2
     #   werkzeug
-matplotlib==3.10.1
+matplotlib==3.10.5
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   seaborn
-narwhals==1.35.0
+narwhals==2.1.2
     # via
     #   altair
     #   plotly
 nest-asyncio==1.6.0
     # via dash
-numpy==2.2.4
+numpy==2.3.2
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   contourpy
@@ -99,7 +100,7 @@ numpy==2.2.4
     #   shapely
     #   statsmodels
     #   streamlit
-packaging==24.2
+packaging==25.0
     # via
     #   altair
     #   geopandas
@@ -110,7 +111,7 @@ packaging==24.2
     #   streamlit
 paho-mqtt==2.1.0
     # via hsl-rt-analysis (pyproject.toml)
-pandas==2.2.3
+pandas==2.3.1
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   geopandas
@@ -119,27 +120,27 @@ pandas==2.2.3
     #   streamlit
 patsy==1.0.1
     # via statsmodels
-pillow==11.2.1
+pillow==11.3.0
     # via
     #   matplotlib
     #   streamlit
-plotly==6.0.1
+plotly==6.3.0
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   dash
-protobuf==5.29.4
+protobuf==6.32.0
     # via streamlit
-pyarrow==19.0.1
+pyarrow==21.0.0
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   streamlit
 pydeck==0.9.1
     # via streamlit
-pyogrio==0.10.0
+pyogrio==0.11.1
     # via geopandas
 pyparsing==3.2.3
     # via matplotlib
-pyproj==3.7.1
+pyproj==3.7.2
     # via geopandas
 python-dateutil==2.9.0.post0
     # via
@@ -151,43 +152,41 @@ referencing==0.36.2
     # via
     #   jsonschema
     #   jsonschema-specifications
-requests==2.32.3
+requests==2.32.5
     # via
     #   dash
     #   folium
     #   streamlit
-retrying==1.3.4
+retrying==1.4.2
     # via dash
-rpds-py==0.24.0
+rpds-py==0.27.0
     # via
     #   jsonschema
     #   referencing
-scikit-learn==1.6.1
+scikit-learn==1.7.1
     # via hsl-rt-analysis (pyproject.toml)
-scipy==1.15.2
+scipy==1.16.1
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   scikit-learn
     #   statsmodels
 seaborn==0.13.2
     # via hsl-rt-analysis (pyproject.toml)
-sentry-sdk==2.26.1
+sentry-sdk==2.35.0
     # via hsl-rt-analysis (pyproject.toml)
-setuptools==78.1.0
+setuptools==80.9.0
     # via dash
-shapely==2.1.0
+shapely==2.1.1
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   geopandas
 six==1.17.0
-    # via
-    #   python-dateutil
-    #   retrying
+    # via python-dateutil
 smmap==5.0.2
     # via gitdb
-statsmodels==0.14.4
+statsmodels==0.14.5
     # via hsl-rt-analysis (pyproject.toml)
-streamlit==1.44.1
+streamlit==1.48.1
     # via hsl-rt-analysis (pyproject.toml)
 tenacity==9.1.2
     # via streamlit
@@ -195,11 +194,11 @@ threadpoolctl==3.6.0
     # via scikit-learn
 toml==0.10.2
     # via streamlit
-tornado==6.4.2
+tornado==6.5.2
     # via streamlit
 tqdm==4.67.1
     # via hsl-rt-analysis (pyproject.toml)
-typing-extensions==4.13.2
+typing-extensions==4.14.1
     # via
     #   altair
     #   dash
@@ -207,17 +206,17 @@ typing-extensions==4.13.2
     #   streamlit
 tzdata==2025.2
     # via pandas
-urllib3==2.4.0
+urllib3==2.5.0
     # via
     #   requests
     #   sentry-sdk
 watchdog==6.0.0
     # via hsl-rt-analysis (pyproject.toml)
-werkzeug==3.0.6
+werkzeug==3.1.3
     # via
     #   dash
     #   flask
-xyzservices==2025.1.0
+xyzservices==2025.4.0
     # via folium
-zipp==3.21.0
+zipp==3.23.0
     # via importlib-metadata
