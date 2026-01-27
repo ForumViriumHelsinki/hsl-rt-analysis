@@ -8,25 +8,25 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 
-def analyze_parquet(file_path):
+def analyze_parquet(args):
     """Analyze parquet file and display key statistics, including spatial properties if available."""
 
     # Check if file exists
-    if not pathlib.Path(file_path).exists():
-        print(f"Error: File '{file_path}' not found.")
+    if not pathlib.Path(args.file_path).exists():
+        print(f"Error: File '{args.file_path}' not found.")
         sys.exit(1)
 
     try:
         # Read parquet file
         print(f"\n{'=' * 80}")
-        print(f"PARQUET FILE ANALYSIS: {pathlib.Path(file_path).name}")
+        print(f"PARQUET FILE ANALYSIS: {pathlib.Path(args.file_path).name}")
         print(f"{'=' * 80}")
         print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"File path: {pathlib.Path(file_path).absolute()}")
-        print(f"File size: {pathlib.Path(file_path).stat().st_size / (1024 * 1024):.2f} MB")
+        print(f"File path: {pathlib.Path(args.file_path).absolute()}")
+        print(f"File size: {pathlib.Path(args.file_path).stat().st_size / (1024 * 1024):.2f} MB")
 
         # Read parquet file metadata first
-        parquet_file = pq.ParquetFile(file_path)
+        parquet_file = pq.ParquetFile(args.file_path)
         num_row_groups = parquet_file.num_row_groups
         total_rows = 0
         for i in range(num_row_groups):
@@ -39,12 +39,12 @@ def analyze_parquet(file_path):
 
         # Try to read as GeoParquet first
         try:
-            df = gpd.read_parquet(file_path)
+            df = gpd.read_parquet(args.file_path)
             is_geo = True
         except (ValueError, TypeError):
             # DriverError occurs when file is not a valid GeoParquet
             # ValueError occurs when geometry column is missing or invalid
-            df = pd.read_parquet(file_path)
+            df = pd.read_parquet(args.file_path)
             is_geo = False
 
         print("\n--- DATAFRAME OVERVIEW ---")
@@ -77,12 +77,16 @@ def analyze_parquet(file_path):
             print(f"- {col_name}: {dtype}")
 
         # Show first rows
-        print("\n--- SAMPLE DATA (first 5 rows) ---")
-        print(df.head().to_string())
+        print(f"\n--- SAMPLE DATA (first {args.sample_size} rows) ---")
+        print(df.head(args.sample_size).to_string())
+
+        # Show last rows
+        print(f"\n--- SAMPLE DATA (last {args.sample_size} rows) ---")
+        print(df.tail(args.sample_size).to_string())
 
         # Show random rows
         print("\n--- SAMPLE DATA (random rows) ---")
-        print(df.sample(5).to_string())
+        print(df.sample(min(args.sample_size, len(df))).to_string())
 
         # Calculate missing values
         print("\n--- MISSING VALUES ---")
@@ -136,7 +140,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Analyze Parquet file contents and display statistics, including spatial properties for GeoParquet files."
     )
+    parser.add_argument("--sample-size", type=int, default=5, help="Number of sample rows to print")
     parser.add_argument("file_path", help="Path to the Parquet file")
 
     args = parser.parse_args()
-    analyze_parquet(args.file_path)
+    analyze_parquet(args)
