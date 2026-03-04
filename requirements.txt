@@ -196,7 +196,7 @@ toml==0.10.2
     # via streamlit
 tornado==6.5.4
     # via streamlit
-tqdm==4.67.1
+tqdm==4.67.3
     # via hsl-rt-analysis (pyproject.toml)
 typing-extensions==4.15.0
     # via
