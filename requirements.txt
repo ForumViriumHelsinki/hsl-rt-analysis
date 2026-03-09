@@ -165,7 +165,7 @@ rpds-py==0.30.0
     #   referencing
 scikit-learn==1.8.0
     # via hsl-rt-analysis (pyproject.toml)
-scipy==1.17.0
+scipy==1.17.1
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   scikit-learn
