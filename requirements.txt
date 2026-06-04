@@ -134,7 +134,7 @@ pyarrow==23.0.0
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   streamlit
-pydeck==0.9.1
+pydeck==0.9.2
     # via streamlit
 pyogrio==0.12.1
     # via geopandas
