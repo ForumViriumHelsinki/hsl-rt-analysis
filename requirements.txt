@@ -44,7 +44,7 @@ geopandas==1.1.2
     # via hsl-rt-analysis (pyproject.toml)
 gitdb==4.0.12
     # via gitpython
-gitpython==3.1.46
+gitpython==3.1.50
     # via streamlit
 idna==3.11
     # via requests
