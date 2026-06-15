@@ -128,7 +128,7 @@ plotly==6.5.2
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   dash
-protobuf==6.33.4
+protobuf==6.33.5
     # via streamlit
 pyarrow==23.0.0
     # via
