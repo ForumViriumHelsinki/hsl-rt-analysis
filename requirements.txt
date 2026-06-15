@@ -82,7 +82,7 @@ narwhals==2.15.0
     #   plotly
 nest-asyncio==1.6.0
     # via dash
-numpy==2.4.1
+numpy==2.4.2
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   contourpy
