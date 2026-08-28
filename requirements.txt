@@ -34,7 +34,7 @@ dash==3.4.0
     # via hsl-rt-analysis (pyproject.toml)
 dtaidistance==2.3.13
     # via hsl-rt-analysis (pyproject.toml)
-flask==3.1.2
+flask==3.1.3
     # via dash
 folium==0.20.0
     # via hsl-rt-analysis (pyproject.toml)
