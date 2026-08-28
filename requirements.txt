@@ -218,5 +218,5 @@ werkzeug==3.1.6
     #   flask
 xyzservices==2025.11.0
     # via folium
-zipp==3.23.0
+zipp==3.23.1
     # via importlib-metadata
