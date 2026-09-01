@@ -174,7 +174,7 @@ seaborn==0.13.2
     # via hsl-rt-analysis (pyproject.toml)
 sentry-sdk==2.50.0
     # via hsl-rt-analysis (pyproject.toml)
-setuptools==80.10.2
+setuptools==83.0.0
     # via dash
 shapely==2.1.2
     # via
