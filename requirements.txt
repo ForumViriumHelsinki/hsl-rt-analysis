@@ -40,7 +40,7 @@ folium==0.20.0
     # via hsl-rt-analysis (pyproject.toml)
 fonttools==4.61.1
     # via matplotlib
-geopandas==1.1.2
+geopandas==1.1.4
     # via hsl-rt-analysis (pyproject.toml)
 gitdb==4.0.12
     # via gitpython
