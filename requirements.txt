@@ -118,7 +118,7 @@ pandas==2.3.3
     #   seaborn
     #   statsmodels
     #   streamlit
-patsy==1.0.2
+patsy==1.0.3
     # via statsmodels
 pillow==12.1.1
     # via
