@@ -37,7 +37,7 @@ Download one or more of the files and place them in the `data/raw/` directory.
 
 ### Virtual environment
 
-This project uses Python 3.12 and `uv` for dependency management. Follow these steps to set up your development environment:
+This project uses Python 3.14 and `uv` for dependency management. Follow these steps to set up your development environment:
 
 Install `uv` if you haven't already. You can use brew:
 
@@ -70,6 +70,31 @@ Install the hooks to your local repository:
 ```bash
 pre-commit install
 ```
+
+### MQTT dumper (Docker)
+
+The HFP data is collected with the MQTT dumper defined in `docker/mqtt_dumper/docker-compose.yml`.
+All dumper services inherit the `donotstart` profile from `mqtt_dumper_base`,
+so plain `docker compose build` or `docker compose up` does nothing.
+Always name the services explicitly:
+
+```bash
+cd docker/mqtt_dumper
+
+# Try a single dumper locally
+docker compose build --pull hsl_dumper_2015
+docker compose up hsl_dumper_2015
+
+# Rebuild and restart the production dumpers (e.g. after dependency updates)
+docker compose build --pull --no-cache hsl_dumper_2015 hsl_dumper_koskelantie_50 hsl_dumper_65_71_79 hsl_dumper_all
+docker compose up -d hsl_dumper_2015 hsl_dumper_koskelantie_50 hsl_dumper_65_71_79 hsl_dumper_all
+```
+
+Do not use `--profile donotstart`: it would also start `mqtt_dumper_base`,
+which lacks the required `--topics` and `--output-dir` arguments and would restart in a loop.
+
+`hsl_dumper_all` subscribes to the whole HFP feed and reads `SENTRY_DSN` from `docker/mqtt_dumper/.env.all`.
+This file is not version controlled and must exist on the host.
 
 ## Data Processing Pipeline
 
