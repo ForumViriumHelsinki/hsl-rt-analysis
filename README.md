@@ -37,7 +37,7 @@ Download one or more of the files and place them in the `data/raw/` directory.
 
 ### Virtual environment
 
-This project uses Python 3.12 and `uv` for dependency management. Follow these steps to set up your development environment:
+This project uses Python 3.14 and `uv` for dependency management. Follow these steps to set up your development environment:
 
 Install `uv` if you haven't already. You can use brew:
 
