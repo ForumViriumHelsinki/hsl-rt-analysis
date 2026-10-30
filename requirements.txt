@@ -45,7 +45,7 @@ flask==3.1.3
     # via dash
 folium==0.20.0
     # via hsl-rt-analysis (pyproject.toml)
-fonttools==4.67.0
+fonttools==4.68.0
     # via matplotlib
 formulaic==1.2.2
     # via statsmodels
