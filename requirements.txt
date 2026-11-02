@@ -245,7 +245,7 @@ werkzeug==3.1.9
     # via
     #   dash
     #   flask
-wrapt==2.5.1
+wrapt==2.5.2
     # via formulaic
 xyzservices==2026.9.1
     # via folium
