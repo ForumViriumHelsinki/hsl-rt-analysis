@@ -37,7 +37,7 @@ contourpy==1.4.0
     # via matplotlib
 cycler==0.12.1
     # via matplotlib
-dash==4.4.1
+dash==4.5.0
     # via hsl-rt-analysis (pyproject.toml)
 dtaidistance==2.5.1
     # via hsl-rt-analysis (pyproject.toml)
