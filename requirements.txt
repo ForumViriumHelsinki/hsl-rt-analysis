@@ -170,7 +170,7 @@ python-dateutil==3.0.0
     # via
     #   matplotlib
     #   pandas
-python-multipart==0.0.32
+python-multipart==0.0.33
     # via streamlit
 referencing==0.37.0
     # via
