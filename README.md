@@ -73,7 +73,7 @@ pre-commit install
 
 ### MQTT dumper (Docker)
 
-The HFP data is collected with the MQTT dumper defined in `docker/mqtt_dumper/docker-compose.yml`.
+The HFP data is collected with the MQTT dumper defined in `docker/mqtt_dumper/compose.yml`.
 All dumper services inherit the `donotstart` profile from `mqtt_dumper_base`,
 so plain `docker compose build` or `docker compose up` does nothing.
 Always name the services explicitly:
@@ -91,7 +91,7 @@ docker compose up -d hsl_dumper_2015 hsl_dumper_koskelantie_50 hsl_dumper_65_71_
 ```
 
 Do not use `--profile donotstart`: it would also start `mqtt_dumper_base`,
-which lacks the required `--topics` and `--output-dir` arguments and would restart in a loop.
+which has no `TOPICS` set and would restart in a loop.
 
 `hsl_dumper_all` subscribes to the whole HFP feed and reads `SENTRY_DSN` from `docker/mqtt_dumper/.env.all`.
 This file is not version controlled and must exist on the host.
