@@ -1,0 +1,197 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "viikki_track",
+                "display_name": "Viikki Track Line",
+                "description": "Tram track line for Viikki area analysis",
+                "buffer_meters": 10,
+                "created": "2025-08-18",
+                "source": "Hand drawn over openstreetmap"
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [
+                        25.002066,
+                        60.228117
+                    ],
+                    [
+                        25.005564,
+                        60.227012
+                    ],
+                    [
+                        25.006921,
+                        60.226493
+                    ],
+                    [
+                        25.007989,
+                        60.226080
+                    ],
+                    [
+                        25.008235,
+                        60.226016
+                    ],
+                    [
+                        25.008530,
+                        60.225995
+                    ],
+                    [
+                        25.008788,
+                        60.226011
+                    ],
+                    [
+                        25.009072,
+                        60.226077
+                    ],
+                    [
+                        25.009287,
+                        60.226189
+                    ],
+                    [
+                        25.010236,
+                        60.226996
+                    ],
+                    [
+                        25.010515,
+                        60.227148
+                    ],
+                    [
+                        25.010708,
+                        60.227233
+                    ],
+                    [
+                        25.010982,
+                        60.227283
+                    ],
+                    [
+                        25.011341,
+                        60.227259
+                    ],
+                    [
+                        25.014389,
+                        60.226828
+                    ],
+                    [
+                        25.014641,
+                        60.226775
+                    ],
+                    [
+                        25.014989,
+                        60.226690
+                    ],
+                    [
+                        25.015311,
+                        60.226557
+                    ],
+                    [
+                        25.015612,
+                        60.226397
+                    ],
+                    [
+                        25.015810,
+                        60.226245
+                    ],
+                    [
+                        25.016990,
+                        60.224823
+                    ],
+                    [
+                        25.017141,
+                        60.224664
+                    ],
+                    [
+                        25.017312,
+                        60.224557
+                    ],
+                    [
+                        25.017564,
+                        60.224469
+                    ],
+                    [
+                        25.029570,
+                        60.221964
+                    ]
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "kamppi_area",
+                "display_name": "Kamppi Central Area",
+                "description": "Central Helsinki area around Kamppi - example polygon for filtering",
+                "buffer_meters": 0,
+                "created": "2025-01-07",
+                "source": "Manual definition"
+            },
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            24.930,
+                            60.168
+                        ],
+                        [
+                            24.940,
+                            60.168
+                        ],
+                        [
+                            24.940,
+                            60.172
+                        ],
+                        [
+                            24.930,
+                            60.172
+                        ],
+                        [
+                            24.930,
+                            60.168
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "name": "helsinki_center",
+                "display_name": "Helsinki City Center",
+                "description": "Larger area covering Helsinki city center with buffer",
+                "buffer_meters": 100,
+                "created": "2025-01-07",
+                "source": "Sample polygon definition"
+            },
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [
+                            24.920,
+                            60.160
+                        ],
+                        [
+                            24.970,
+                            60.160
+                        ],
+                        [
+                            24.970,
+                            60.180
+                        ],
+                        [
+                            24.920,
+                            60.180
+                        ],
+                        [
+                            24.920,
+                            60.160
+                        ]
+                    ]
+                ]
+            }
+        }
+    ]
+}
