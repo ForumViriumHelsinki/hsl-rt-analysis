@@ -154,7 +154,7 @@ pyarrow==26.0.0
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   streamlit
-pydantic==2.14.1
+pydantic==2.14.3
     # via dash
 pydantic-core==2.50.1
     # via pydantic
