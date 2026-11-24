@@ -130,7 +130,7 @@ packaging==26.3
     #   streamlit
 paho-mqtt==2.1.0
     # via hsl-rt-analysis (pyproject.toml)
-pandas==3.1.0
+pandas==3.1.1
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   formulaic
