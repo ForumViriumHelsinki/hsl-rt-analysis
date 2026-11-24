@@ -150,7 +150,7 @@ plotly==7.1.0
     #   dash
 protobuf==7.36.2
     # via streamlit
-pyarrow==26.0.0
+pyarrow==26.0.1
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   streamlit
