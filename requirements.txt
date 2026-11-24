@@ -239,7 +239,7 @@ uvicorn==0.54.0
     # via streamlit
 watchdog==6.0.0
     # via hsl-rt-analysis (pyproject.toml)
-websockets==17.3
+websockets==17.4
     # via streamlit
 werkzeug==3.1.9
     # via
