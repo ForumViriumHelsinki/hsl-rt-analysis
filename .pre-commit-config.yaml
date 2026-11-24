@@ -12,11 +12,25 @@ repos:
 -   repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.3
     hooks:
+    # Same scope as `just lint`: exploration/ and docker/ predate the strict rule set.
     -   id: ruff
         args: [--fix]
+        files: ^(src|tests)/
     -   id: ruff-format
+        files: ^(src|tests)/
 
 -   repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.4.0
     hooks:
     -   id: mypy
+        # Python 3.14 syntax (unparenthesized except tuples from ruff format) needs a 3.14 interpreter.
+        language_version: python3.14
+
+-   repo: local
+    hooks:
+    -   id: pytest
+        name: pytest
+        entry: uv run pytest -q
+        language: system
+        pass_filenames: false
+        types: [python]
