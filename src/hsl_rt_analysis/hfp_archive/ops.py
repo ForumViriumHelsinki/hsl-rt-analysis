@@ -8,11 +8,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import duckdb
-
 from hsl_rt_analysis.hfp_archive import manifest as mf
 from hsl_rt_analysis.hfp_archive.config import Settings, hfp_day, interim_day, raw_day, superseded
-from hsl_rt_analysis.hfp_archive.convert import REJECTS_NAME, REPEATS_NAME
+from hsl_rt_analysis.hfp_archive.convert import REJECTS_NAME, REPEATS_NAME, connect
 from hsl_rt_analysis.hfp_archive.discover import Inventory
 from hsl_rt_analysis.hfp_archive.remote import Remote
 from hsl_rt_analysis.hfp_archive.restore import check_c8, restored_contents
@@ -220,9 +218,8 @@ def _deep_rebuild(remote: Remote, settings: Settings, m: dict[str, Any], scratch
     parts = sorted((scratch / "dt").glob("part-*.parquet"))
     repeats = scratch / "dt" / REPEATS_NAME
     rejects = scratch / "dt" / REJECTS_NAME
-    con = duckdb.connect()
+    con = connect(settings.memory_limit, settings.threads, scratch / "tmp")
     try:
-        con.execute(f"SET memory_limit = '{settings.memory_limit}'; SET temp_directory = '{scratch / 'tmp'}'")
         restored = restored_contents(
             con, parts, repeats if repeats.exists() else None, rejects if rejects.exists() else None
         )

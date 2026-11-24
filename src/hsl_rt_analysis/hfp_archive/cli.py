@@ -88,7 +88,9 @@ def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--state-dir", type=Path, default=home / ".local/state/hfp-archive")
     parser.add_argument("--work-dir", type=Path, default=home / "hfp-archive-work", help="Local scratch disk.")
     parser.add_argument("--memory-limit", default="8GB", help="DuckDB memory limit; it spills to disk above.")
-    parser.add_argument("--threads", type=int, default=0, help="DuckDB threads (0 = all cores).")
+    parser.add_argument(
+        "--threads", type=int, default=0, help="DuckDB threads (0 = auto: one per GB of memory limit)."
+    )
     parser.add_argument("--log", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     parser.add_argument("--log-file", type=Path, help="Also write the log to this file.")
 

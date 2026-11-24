@@ -16,8 +16,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
-import duckdb
-
 from hsl_rt_analysis.hfp_archive import manifest as mf
 from hsl_rt_analysis.hfp_archive.checks import build_tar, check_c5, check_c7
 from hsl_rt_analysis.hfp_archive.config import (
@@ -36,6 +34,7 @@ from hsl_rt_analysis.hfp_archive.convert import (
     FILE_STATS_NAME,
     REJECTS_NAME,
     REPEATS_NAME,
+    connect,
     convert_day,
 )
 from hsl_rt_analysis.hfp_archive.guards import StopFlag
@@ -327,9 +326,8 @@ class Pipeline:
         parts = sorted(p.out.glob("part-*.parquet"))
         repeats = p.out / REPEATS_NAME if (p.out / REPEATS_NAME).exists() else None
         rejects = p.out / REJECTS_NAME if (p.out / REJECTS_NAME).exists() else None
-        con = duckdb.connect()
+        con = connect(self.s.memory_limit, self.s.threads, p.stage)
         try:
-            con.execute(f"SET memory_limit = '{self.s.memory_limit}'; SET temp_directory = '{p.stage}'")
             restored = restored_contents(con, parts, repeats, rejects)
         finally:
             con.close()
