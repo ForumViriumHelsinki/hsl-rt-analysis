@@ -80,11 +80,12 @@ ci: lint test
 archive *args:
     uv run hfp-archive "$@"
 
-# Starts the bulk run in a detached tmux session under caffeinate (-i idle sleep, -s system sleep on AC
-# power), logging to archive_log. It survives closing the terminal; a closed laptop lid still sleeps
-# unless the Mac runs clamshell on power, and the run then resumes after waking. Extra arguments go to
+# Starts the bulk run in a detached tmux session, logging to archive_log. It survives closing the
+# terminal or the SSH session. On macOS it runs under caffeinate (-i idle sleep, -s system sleep on AC
+# power); a closed laptop lid still sleeps unless the Mac runs clamshell on power, and the run then
+# resumes after waking. A Linux server does not sleep, so there it runs as is. Extra arguments go to
 # `hfp-archive run`, e.g. `just archive-bg --to 2025-12-31`.
-[doc('Start the bulk run in the background (tmux + caffeinate), log to ~/hfp-archive-work/logs/run.log')]
+[doc('Start the bulk run in the background (tmux, + caffeinate on macOS), log to ~/hfp-archive-work/logs/run.log')]
 [group('project')]
 archive-bg *args:
     #!/usr/bin/env bash
@@ -93,8 +94,10 @@ archive-bg *args:
         echo "already running: tmux attach -t {{ archive_session }}"; exit 1
     fi
     mkdir -p "$(dirname {{ archive_log }})"
+    awake=()
+    if command -v caffeinate >/dev/null; then awake=(caffeinate -is); fi
     tmux new-session -d -s {{ archive_session }} \
-        caffeinate -is uv run hfp-archive run --log-file {{ archive_log }} "$@"
+        ${awake[@]+"${awake[@]}"} uv run hfp-archive run --log-file {{ archive_log }} "$@"
     echo "started; follow with: just archive-log   (or tmux attach -t {{ archive_session }})"
 
 # Follow the bulk run's log.

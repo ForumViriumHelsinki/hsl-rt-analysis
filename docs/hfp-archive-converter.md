@@ -74,6 +74,32 @@ just archive-stop                              # stop the bulk run after its cur
 and, on AC power, from system sleep; a closed lid still sleeps the Mac unless it runs clamshell with
 power and a display. After waking, the run waits for the network and carries on.
 
+## Running on a Linux server
+
+The tool runs the same on Linux. It needs `git`, `uv`, `just`, `tmux`, `rsync` and an SSH key that the
+storage box accepts on port 23. A server does not sleep, so `archive-bg` runs without `caffeinate`
+there. Size the machine from the measurements below: at least 15 GB free on the work disk and 24 GB
+RAM for the default `--memory-limit 8GB`. With less RAM, lower `--memory-limit`; DuckDB then spills
+more to the work disk.
+
+1. Clone the repository, run `just setup` and write `HFP_ARCHIVE_REMOTE` to `.env`.
+2. Check the connection: `ssh -p 23 "$HFP_ARCHIVE_REMOTE" ls 2025_HSL_RT/.hfp-archive-sentinel`.
+3. Copy the state database from the machine that ran before, with the old machine's run stopped:
+   `scp ~/.local/state/hfp-archive/state.sqlite <server>:.local/state/hfp-archive/`. It carries the
+   `done` days, their audits and the `needs_review` decisions, which `purge-superseded` and
+   `select_days` rely on. Never run two machines at once: the lock is local to each machine.
+4. `just archive run --limit 1 --dry-run`, then `just archive run --limit 1`, then `just archive-bg`.
+
+Without the copied database, finished days are still skipped (their raw directories are gone), but
+days that need review are tried again, and the days finished on the old machine can only be purged
+from there.
+
+## Days left out
+
+- 2025-03-11, the first raw day: collection started during the day, so the interim files hold more
+  than the raw files (C7 fails). It stays `needs_review` and keeps its original layout. Without the
+  state database, run with `--from 2025-03-12`.
+
 ## Before purging `_superseded/`
 
 The storage box has 1.2 TB free and is shared with other projects. The new files take roughly
