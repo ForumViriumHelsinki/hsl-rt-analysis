@@ -80,7 +80,10 @@ The tool runs the same on Linux. It needs `git`, `uv`, `just`, `tmux`, `rsync` a
 storage box accepts on port 23. A server does not sleep, so `archive-bg` runs without `caffeinate`
 there. Size the machine from the measurements below: at least 15 GB free on the work disk and 24 GB
 RAM for the default `--memory-limit 8GB`. With less RAM, lower `--memory-limit`; DuckDB then spills
-more to the work disk.
+more to the work disk. By default DuckDB gets one thread per GB of the memory limit, at most one per
+core: with all 32 cores of a big server and 8 GB it runs out of memory instead of spilling. On a
+machine with plenty of RAM, raise the limit to use more cores. The options go after the command,
+e.g. `just archive run --memory-limit 24GB --limit 1 --dry-run`.
 
 1. Clone the repository, run `just setup` and write `HFP_ARCHIVE_REMOTE` to `.env`.
 2. Check the connection: `ssh -p 23 "$HFP_ARCHIVE_REMOTE" ls 2025_HSL_RT/.hfp-archive-sentinel`.

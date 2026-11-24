@@ -13,6 +13,7 @@ import pytest
 
 from hsl_rt_analysis.hfp_archive import ops
 from hsl_rt_analysis.hfp_archive.checks import build_tar, check_c5, route_group
+from hsl_rt_analysis.hfp_archive.convert import effective_threads, memory_gb
 from hsl_rt_analysis.hfp_archive.discover import inventory
 from hsl_rt_analysis.hfp_archive.guards import StopFlag
 from hsl_rt_analysis.hfp_archive.pipeline import Pipeline
@@ -156,3 +157,25 @@ def test_remote_output_parsers() -> None:
     for bad in ("raw/all/../x", "raw/all/a b", "raw/$(rm)"):
         with pytest.raises(ValueError, match="unsafe"):
             check_safe(bad)
+
+
+@pytest.mark.parametrize(
+    ("limit", "threads", "cores", "expected"),
+    [
+        ("8GB", 0, 32, 8),  # a big server is capped by the memory limit
+        ("8GB", 0, 4, 4),  # a small machine keeps all its cores
+        ("24GB", 0, 32, 24),
+        ("500MB", 0, 8, 1),  # never below one thread
+        ("8GiB", 0, 32, 8),
+        ("8GB", 12, 32, 12),  # an explicit count wins
+    ],
+)
+def test_effective_threads(limit: str, threads: int, cores: int, expected: int) -> None:
+    """Automatic DuckDB threads stay within the memory limit."""
+    assert effective_threads(limit, threads, cores) == expected
+
+
+def test_memory_gb_rejects_garbage() -> None:
+    """An unparseable memory limit is an error, not a silent default."""
+    with pytest.raises(ValueError, match="memory limit"):
+        memory_gb("lots")

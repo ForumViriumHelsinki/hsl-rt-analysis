@@ -7,6 +7,7 @@ directories; the pipeline moves the results to the storage box.
 
 import json
 import logging
+import os
 import re
 import shutil
 import time
@@ -98,12 +99,57 @@ def files_by_hour(day_dir: Path, day: str) -> dict[str, list[Path]]:
     return dict(sorted(hours.items()))
 
 
+_SIZE_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB|KIB|MIB|GIB|TIB)?\s*$", re.IGNORECASE)
+_SIZE_GB = {"KB": 1e-6, "MB": 1e-3, "GB": 1.0, "TB": 1e3, "KIB": 2**10 / 1e9, "MIB": 2**20 / 1e9}
+_SIZE_GB |= {"GIB": 2**30 / 1e9, "TIB": 2**40 / 1e9}
+
+# DuckDB needs roughly this much memory per thread for the hourly staging and the C8 rebuild; with less,
+# a 32-core machine and an 8 GB limit run out of memory instead of spilling.
+GB_PER_THREAD = 1.0
+
+
+def memory_gb(memory_limit: str) -> float:
+    """Parse a DuckDB memory limit such as 8GB or 500MiB.
+
+    Args:
+        memory_limit: The limit; a bare number means GB.
+
+    Returns:
+        The limit in GB (10**9 bytes).
+
+    Raises:
+        ValueError: If the value cannot be parsed.
+    """
+    m = _SIZE_RE.match(memory_limit)
+    if not m:
+        msg = f"cannot parse memory limit {memory_limit!r}"
+        raise ValueError(msg)
+    return float(m[1]) * _SIZE_GB[(m[2] or "GB").upper()]
+
+
+def effective_threads(memory_limit: str, threads: int, cores: int | None = None) -> int:
+    """Return the DuckDB thread count: the given one, or all cores capped by the memory limit.
+
+    Args:
+        memory_limit: DuckDB memory limit.
+        threads: Requested threads; 0 means automatic.
+        cores: Number of cores (default: this machine's).
+
+    Returns:
+        Threads to use, at least 1.
+    """
+    if threads > 0:
+        return threads
+    cores = cores or os.cpu_count() or 1
+    return max(1, min(cores, int(memory_gb(memory_limit) / GB_PER_THREAD)))
+
+
 def connect(memory_limit: str, threads: int, temp_dir: Path, max_temp: str = "40GB") -> duckdb.DuckDBPyConnection:
     """Open an in-memory DuckDB connection that spills to a local directory.
 
     Args:
         memory_limit: DuckDB memory limit, e.g. 8GB.
-        threads: Worker threads; 0 keeps DuckDB's default (all cores).
+        threads: Worker threads; 0 uses all cores, capped by the memory limit.
         temp_dir: Spill directory.
         max_temp: Largest spill allowed.
 
@@ -113,8 +159,9 @@ def connect(memory_limit: str, threads: int, temp_dir: Path, max_temp: str = "40
     con = duckdb.connect()
     con.execute(f"SET memory_limit = '{memory_limit}'; SET enable_progress_bar = false")
     con.execute(f"SET temp_directory = '{temp_dir}'; SET max_temp_directory_size = '{max_temp}'")
-    if threads:
-        con.execute(f"SET threads = {int(threads)}")
+    n = effective_threads(memory_limit, threads)
+    con.execute(f"SET threads = {n}")
+    logger.debug("DuckDB: memory limit %s, %d threads", memory_limit, n)
     return con
 
 
