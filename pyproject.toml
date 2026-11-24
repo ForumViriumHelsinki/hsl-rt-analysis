@@ -8,22 +8,17 @@ version = "0.1.0"
 dependencies = [
     # Sentry
     "sentry-sdk>=2.73.0",
-
     # Networking
     "paho-mqtt>=2.1.0",
-
     # Core data processing
     "numpy>=2.5.4",
     "pandas>=3.1.0",
     "scipy>=1.18.1",
-
     # Time series analysis
     "statsmodels>=0.15.0",
     "dtaidistance>=2.5.1",  # For time series pattern matching
-
     # Machine Learning
     "scikit-learn>=1.9.1",
-
     # Visualization
     "matplotlib>=3.11.2",
     "seaborn>=0.13.2",
@@ -31,16 +26,17 @@ dependencies = [
     "dash>=4.4.1",  # Added for web dashboards
     "streamlit>=1.66.1",
     "watchdog>=6.0.0",
-
     # Geospatial analysis
     "folium>=0.20.0",
     "geopandas>=1.2.0",
     "shapely>=2.2.0",  # Added for geometric operations
-
     # Data validation and processing
     # "great-expectations>=1.3.8",
     "pyarrow>=26.0.0",
     "tqdm>=4.70.1",
+    # HFP archive converter. Pinned: the archive manifests record the DuckDB version, and the
+    # conversion SQL was validated against exactly this release.
+    "duckdb==1.5.3",
 ]
 
 classifiers = [
@@ -53,6 +49,9 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+
+[project.scripts]
+hfp-archive = "hsl_rt_analysis.hfp_archive.cli:main"
 
 [project.optional-dependencies]
 test = [
@@ -84,6 +83,13 @@ quote-style = "double"
 indent-style = "space"
 skip-magic-trailing-comma = false
 
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "UP", "B", "SIM", "RUF", "N", "PTH", "ANN", "PT"]
+
+[tool.ruff.lint.per-file-ignores]
+# Predates the strict rule set; not part of the archive tool.
+"src/hsl_rt_analysis/map_viz_test.py" = ["ANN", "UP018", "RUF046"]
+
 [tool.ruff.lint.isort]
 combine-as-imports = true
 lines-after-imports = 2
@@ -93,4 +99,13 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "--cov=fvhdata --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["hsl_rt_analysis.hfp_archive"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.3",
+]

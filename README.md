@@ -96,6 +96,13 @@ which has no `TOPICS` set and would restart in a loop.
 `hsl_dumper_all` subscribes to the whole HFP feed and reads `SENTRY_DSN` from `docker/mqtt_dumper/.env.all`.
 This file is not version controlled and must exist on the host.
 
+## HFP archive
+
+The long-term archive format of the collected HFP data is defined in
+[docs/hfp-archive-format.md](docs/hfp-archive-format.md). `hfp-archive` (`src/hsl_rt_analysis/hfp_archive/`)
+converts the storage box to it day by day; see [docs/hfp-archive-converter.md](docs/hfp-archive-converter.md).
+It needs `HFP_ARCHIVE_REMOTE` (the storage box SSH target, `user@host`) in `.env`.
+
 ## Data Processing Pipeline
 
 1. Data Collection

@@ -1,0 +1,116 @@
+# hsl-rt-analysis — task runner. Run `just` to list the recipes.
+#
+# Shared conventions across our projects (see the "Task Runner (Justfile)" section of the
+# global development guidelines in ~/.claude/CLAUDE.md):
+#   just              lists recipes; never has side effects
+#
+# Recipe names are lowercase kebab-case; anything outside the shared core set is named
+# <area>-<verb>. Domain commands live in the `project` group.
+
+set positional-arguments := true
+
+# HFP_ARCHIVE_REMOTE (the storage box user@host) lives in .env, which is not committed.
+set dotenv-load := true
+set dotenv-required := false
+
+# Only the maintained package and its tests: exploration/ and docker/ predate the strict rule set.
+lint_paths := "src tests"
+# The archive converter's tmux session and log, used by the archive-* recipes.
+archive_session := "hfp-archive"
+archive_log := env("HOME") / "hfp-archive-work/logs/run.log"
+
+[private]
+default:
+    @just --list --unsorted
+
+# --- setup -------------------------------------------------------------------
+
+# Install/sync the Python virtual environment.
+[group('setup')]
+install:
+    uv sync
+
+# One-time developer setup for a fresh clone: dependencies + git hooks.
+[doc('One-time developer setup: dependencies + git hooks.')]
+[group('setup')]
+setup: install
+    uvx prek install
+
+# `hooks` runs the hooks; installing them is `setup`'s job.
+[doc('Run all git hooks against all files.')]
+[group('setup')]
+hooks:
+    uvx prek run --all-files
+
+# --- quality -----------------------------------------------------------------
+
+# Run the test suite.
+[group('quality')]
+test *args:
+    uv run pytest "$@"
+
+# What is measured lives in pyproject.toml under [tool.coverage.run].
+[doc('Run the test suite with a coverage report.')]
+[group('quality')]
+cov *args:
+    uv run pytest --cov --cov-report=term-missing "$@"
+
+# Lint and format-check (no changes written).
+[doc('Lint and format-check (no changes written).')]
+[group('quality')]
+lint:
+    uv run ruff check {{ lint_paths }}
+    uv run ruff format --check {{ lint_paths }}
+
+# Auto-fix lint issues and format the code.
+[group('quality')]
+fmt:
+    uv run ruff check --fix {{ lint_paths }}
+    uv run ruff format {{ lint_paths }}
+
+# The local pre-push gate.
+[group('quality')]
+ci: lint test
+
+# --- project -----------------------------------------------------------------
+
+# Any hfp-archive command in the foreground, e.g. `just archive run --days 2026-10-15 --dry-run`.
+[doc('Run an hfp-archive command, e.g. just archive run --days 2026-10-15 --dry-run')]
+[group('project')]
+archive *args:
+    uv run hfp-archive "$@"
+
+# Starts the bulk run in a detached tmux session under caffeinate (-i idle sleep, -s system sleep on AC
+# power), logging to archive_log. It survives closing the terminal; a closed laptop lid still sleeps
+# unless the Mac runs clamshell on power, and the run then resumes after waking. Extra arguments go to
+# `hfp-archive run`, e.g. `just archive-bg --to 2025-12-31`.
+[doc('Start the bulk run in the background (tmux + caffeinate), log to ~/hfp-archive-work/logs/run.log')]
+[group('project')]
+archive-bg *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if tmux has-session -t {{ archive_session }} 2>/dev/null; then
+        echo "already running: tmux attach -t {{ archive_session }}"; exit 1
+    fi
+    mkdir -p "$(dirname {{ archive_log }})"
+    tmux new-session -d -s {{ archive_session }} \
+        caffeinate -is uv run hfp-archive run --log-file {{ archive_log }} "$@"
+    echo "started; follow with: just archive-log   (or tmux attach -t {{ archive_session }})"
+
+# Follow the bulk run's log.
+[group('project')]
+archive-log:
+    tail -f {{ archive_log }}
+
+# Progress per day, e.g. `just archive-status --all`.
+[doc('Progress per day of the archive conversion')]
+[group('project')]
+archive-status *args:
+    uv run hfp-archive status "$@"
+
+# Ask the background run to stop after its current step (SIGTERM to the converter, not to tmux).
+[doc('Stop the background run cleanly after its current step')]
+[group('project')]
+archive-stop:
+    # Matches the Python process only, not the uv or caffeinate wrappers around it.
+    pkill -TERM -f "bin/hfp-archive run" || echo "not running"
