@@ -65,7 +65,7 @@ itsdangerous==2.2.0
     # via
     #   flask
     #   streamlit
-janus==2.0.0
+janus==2.1.1
     # via dash
 jinja2==3.1.6
     # via
