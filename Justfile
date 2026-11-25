@@ -93,11 +93,23 @@ archive-bg *args:
     if tmux has-session -t {{ archive_session }} 2>/dev/null; then
         echo "already running: tmux attach -t {{ archive_session }}"; exit 1
     fi
+    : "${HFP_ARCHIVE_REMOTE:?set HFP_ARCHIVE_REMOTE in .env}"
     mkdir -p "$(dirname {{ archive_log }})"
     awake=()
     if command -v caffeinate >/dev/null; then awake=(caffeinate -is); fi
-    tmux new-session -d -s {{ archive_session }} \
-        ${awake[@]+"${awake[@]}"} uv run hfp-archive run --log-file {{ archive_log }} "$@"
+    # A tmux server that is already running (another session) starts the new one with the server's own
+    # environment, not this shell's, so PATH (for uv) and the .env settings are passed explicitly. If the
+    # run fails, its window stays open with the error, and the exit status always goes to the log.
+    tmux new-session -d -s {{ archive_session }} -c "{{ justfile_directory() }}" \
+        env PATH="$PATH" HFP_ARCHIVE_REMOTE="$HFP_ARCHIVE_REMOTE" \
+        bash -c '"$@"; rc=$?
+            echo "$(date +%FT%T) hfp-archive exited with status $rc" >> "{{ archive_log }}"
+            if [ "$rc" -ne 0 ]; then echo "exited with status $rc; press Enter to close"; read -r _; fi' \
+        archive-bg ${awake[@]+"${awake[@]}"} uv run hfp-archive run --log-file {{ archive_log }} "$@"
+    sleep 5
+    if ! pgrep -f "bin/hfp-archive run" >/dev/null; then
+        echo "the run stopped at once; see the error with: tmux attach -t {{ archive_session }}"; exit 1
+    fi
     echo "started; follow with: just archive-log   (or tmux attach -t {{ archive_session }})"
 
 # Follow the bulk run's log.
