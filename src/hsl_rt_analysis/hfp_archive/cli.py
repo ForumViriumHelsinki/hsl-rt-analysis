@@ -8,8 +8,13 @@ Commands:
   audit             re-check converted days on the storage box alone (needed before purging)
   purge-superseded  delete _superseded/ data of audited days before a date (dry run unless --execute)
   restore           rebuild a day's raw files from its Parquet files
+  replicate         copy finished days to the Azure Blob container, verified file by file
+  replica-status    which converted days are (not yet) in the Azure Blob container
+  azure-check       write, read back and list a small probe blob to test the SAS token
 
 The storage box is given with --remote or HFP_ARCHIVE_REMOTE (user@host, SSH port 23).
+The Azure container is given with AZURE_BLOB_SAS_URL, its layout with AZURE_HFP_PREFIX
+(default /hsl/hfp/) and AZURE_HFP_RAW_PREFIX (raw tars are copied only when it is set).
 """
 
 import argparse
@@ -22,20 +27,29 @@ from datetime import timedelta
 from pathlib import Path
 
 import duckdb
+from dotenv import load_dotenv
 
 from hsl_rt_analysis.hfp_archive import ops
+from hsl_rt_analysis.hfp_archive.blobstore import (
+    AzureBlobStore,
+    BlobAuthError,
+    BlobStore,
+    BlobUnavailableError,
+)
 from hsl_rt_analysis.hfp_archive.config import RawArchivePolicy, Settings, hfp_day, validate_day
 from hsl_rt_analysis.hfp_archive.discover import cutoff_day, inventory, select_days
 from hsl_rt_analysis.hfp_archive.guards import AlreadyRunningError, RunLock, StopFlag
 from hsl_rt_analysis.hfp_archive.pipeline import Pipeline
 from hsl_rt_analysis.hfp_archive.remote import Remote, RemoteUnavailableError, SentinelMissingError, SshRemote
+from hsl_rt_analysis.hfp_archive.replicate import BlobLayout, Replicator, digests, select_replica_days
 from hsl_rt_analysis.hfp_archive.restore import write_restored_day
-from hsl_rt_analysis.hfp_archive.state import DayState, StateDB
+from hsl_rt_analysis.hfp_archive.state import DayState, StateDB, now_iso
 
 
 logger = logging.getLogger(__name__)
 
-EXIT_SENTINEL, EXIT_UNREACHABLE, EXIT_RUNNING = 3, 4, 7
+EXIT_SENTINEL, EXIT_UNREACHABLE, EXIT_AZURE_AUTH, EXIT_RUNNING = 3, 4, 5, 7
+AZURE_COMMANDS = {"replicate", "replica-status", "azure-check"}
 
 
 def setup_logging(log_level: str, log_file: Path | None = None) -> None:
@@ -156,6 +170,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     _common(restore)
     restore.add_argument("day", type=_day)
     restore.add_argument("--out", type=Path, required=True)
+
+    replicate = sub.add_parser("replicate", help="Copy finished days to the Azure Blob container.")
+    _common(replicate)
+    _range(replicate)
+    replicate.add_argument("--limit", type=int, help="At most this many days.")
+    replicate.add_argument("--verify", action="store_true", help="Download every blob back and compare SHA-256.")
+
+    for name, text in (("replica-status", "Days not yet in Azure."), ("azure-check", "Test the SAS token.")):
+        _common(sub.add_parser(name, help=text))
     return parser.parse_args(argv)
 
 
@@ -297,7 +320,96 @@ def cmd_restore(args: argparse.Namespace, settings: Settings, remote: Remote) ->
     return 0
 
 
-def dispatch(args: argparse.Namespace, settings: Settings, remote: Remote, db: StateDB) -> int:
+def cmd_replicate(args: argparse.Namespace, settings: Settings, remote: Remote, store: BlobStore, db: StateDB) -> int:
+    """Copy the selected finished days to the blob container.
+
+    It has its own lock, so it can run next to a conversion run (both only read the same days).
+
+    Args:
+        args: Parsed arguments.
+        settings: Settings.
+        remote: The storage box.
+        store: The blob container.
+        db: State database.
+
+    Returns:
+        Exit code.
+    """
+    layout = BlobLayout.from_env(os.environ)
+    with RunLock(settings.state_dir / "replicate.lock"), StopFlag() as stop:
+        remote.check_sentinel()
+        replicator = Replicator(settings, remote, store, layout, db, stop)
+        done = set(db.replicas(replicator.target))
+        days = select_replica_days(inventory(remote).hfp, done, args.first, args.last, args.days)
+        if args.limit:
+            days = days[: args.limit]
+        tar = f", tars to {layout.raw_prefix}" if layout.raw_prefix else ", no raw tars"
+        logger.info("%d days to copy to %s%s", len(days), replicator.target, tar)
+        summary = replicator.run(days, args.verify)
+        logger.info(
+            "Replication ended: %s; %d copied, %d failed, %d skipped, %.1f GB uploaded",
+            summary.stopped_reason or "all selected days handled",
+            len(summary.done),
+            len(summary.failed),
+            len(summary.skipped),
+            summary.uploaded_bytes / 1e9,
+        )
+        return summary.exit_code
+
+
+def cmd_replica_status(remote: Remote, store: BlobStore, db: StateDB) -> int:
+    """Print which converted days are copied, failed or still missing in the container.
+
+    Args:
+        remote: The storage box.
+        store: The blob container.
+        db: State database.
+
+    Returns:
+        Exit code.
+    """
+    layout = BlobLayout.from_env(os.environ)
+    records = db.replicas(f"{store.describe()}/{layout.data_prefix}")
+    hfp = inventory(remote).hfp
+    missing = sorted(hfp - set(records))
+    failed = [r for r in records.values() if r.state == "failed"]
+    for r in failed:
+        print(f"{r.day}  failed     {r.last_error}")
+    print(
+        f"{store.describe()}/{layout.data_prefix}: {len(records) - len(failed)} copied, {len(failed)} failed, "
+        f"{len(missing)} not yet ({missing[0] if missing else '-'} ... {missing[-1] if missing else '-'})"
+    )
+    return 0
+
+
+def cmd_azure_check(store: BlobStore, settings: Settings) -> int:
+    """Write a probe blob, read it back and list it: proves the create, write, read and list permissions.
+
+    Args:
+        store: The blob container.
+        settings: Settings (for the local scratch directory).
+
+    Returns:
+        Exit code (1 if the probe did not read back).
+    """
+    layout = BlobLayout.from_env(os.environ)
+    name = f"{layout.data_prefix}_hfp-archive-probe.txt"
+    settings.work_dir.mkdir(parents=True, exist_ok=True)
+    local, back = settings.work_dir / "azure-probe.txt", settings.work_dir / "azure-probe-back.txt"
+    local.write_text(f"hfp-archive probe {now_iso()}\n")
+    sha, md5 = digests(local)
+    store.upload(local, name, sha, md5, overwrite=True)
+    store.download(name, back)
+    ok = back.read_bytes() == local.read_bytes() and name in store.list_names(layout.data_prefix)
+    local.unlink()
+    back.unlink()
+    logger.log(logging.INFO if ok else logging.ERROR, "azure-check %s: %s", "ok" if ok else "FAILED", store.describe())
+    return 0 if ok else 1
+
+
+def dispatch(
+    args: argparse.Namespace, settings: Settings, remote: Remote, db: StateDB, store: BlobStore | None = None
+) -> int:
     """Run one command.
 
     Args:
@@ -305,10 +417,20 @@ def dispatch(args: argparse.Namespace, settings: Settings, remote: Remote, db: S
         settings: Settings.
         remote: The storage box.
         db: State database.
+        store: The blob container (only for the Azure commands).
 
     Returns:
         Exit code.
     """
+    if args.command in AZURE_COMMANDS:
+        assert store is not None
+        match args.command:
+            case "replicate":
+                return cmd_replicate(args, settings, remote, store, db)
+            case "replica-status":
+                return cmd_replica_status(remote, store, db)
+            case _:
+                return cmd_azure_check(store, settings)
     match args.command:
         case "run":
             return cmd_run(args, settings, remote, db)
@@ -333,27 +455,57 @@ def dispatch(args: argparse.Namespace, settings: Settings, remote: Remote, db: S
     return 2
 
 
-def main(argv: list[str] | None = None, remote: Remote | None = None) -> None:
+def build_store(settings: Settings) -> BlobStore:
+    """Connect to the container named by AZURE_BLOB_SAS_URL.
+
+    Args:
+        settings: Settings (for the connection wait time).
+
+    Returns:
+        The container.
+
+    Raises:
+        SystemExit: If AZURE_BLOB_SAS_URL is not set.
+    """
+    sas_url = os.environ.get("AZURE_BLOB_SAS_URL", "").strip()
+    if not sas_url:
+        sys.exit("No Azure container: set AZURE_BLOB_SAS_URL (container URL with a SAS token) in .env.")
+    return AzureBlobStore(sas_url, settings.max_wait_s)
+
+
+def main(argv: list[str] | None = None, remote: Remote | None = None, store: BlobStore | None = None) -> None:
     """Run the main logic.
 
     Args:
         argv: Arguments (default: sys.argv).
         remote: The storage box (default: SSH to --remote); tests pass a local stand-in.
+        store: The blob container (default: AZURE_BLOB_SAS_URL); tests pass a local stand-in.
     """
+    # .env in the working directory holds HFP_ARCHIVE_REMOTE and the Azure SAS URL; reading it here keeps
+    # the token off command lines (tmux, systemd), where other users could see it in the process list.
+    load_dotenv(Path.cwd() / ".env", override=False)
     args = parse_args(argv)
     setup_logging(args.log, args.log_file)
     settings = build_settings(args)
     if remote is None:
         remote = SshRemote(settings.remote, settings.remote_root, settings.remote_port, settings.max_wait_s)
+    if store is None and args.command in AZURE_COMMANDS:
+        store = build_store(settings)
     db = StateDB(settings.state_db)
     try:
-        code = dispatch(args, settings, remote, db)
+        code = dispatch(args, settings, remote, db, store)
     except SentinelMissingError as exc:
         logger.error("Stopping: %s", exc)
         code = EXIT_SENTINEL
     except RemoteUnavailableError as exc:
         logger.error("Stopping: %s", exc)
         code = EXIT_UNREACHABLE
+    except BlobUnavailableError as exc:
+        logger.error("Stopping: %s", exc)
+        code = EXIT_UNREACHABLE
+    except BlobAuthError as exc:
+        logger.error("Stopping: Azure refused the SAS token (expired or missing a permission?): %s", exc)
+        code = EXIT_AZURE_AUTH
     except AlreadyRunningError as exc:
         logger.error("%s", exc)
         code = EXIT_RUNNING

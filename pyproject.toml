@@ -37,6 +37,8 @@ dependencies = [
     # HFP archive converter. Pinned: the archive manifests record the DuckDB version, and the
     # conversion SQL was validated against exactly this release.
     "duckdb==1.5.6",
+    "azure-storage-blob>=12.31.1",
+    "python-dotenv>=1.2.4",
 ]
 
 classifiers = [

@@ -15,6 +15,12 @@ echo 'HFP_ARCHIVE_REMOTE=<user>@<user>.your-storagebox.de' >> .env   # not commi
 | Environment variable | Meaning |
 | --- | --- |
 | `HFP_ARCHIVE_REMOTE` | SSH target of the storage box (key-based login on port 23 must work) |
+| `AZURE_BLOB_SAS_URL` | Container URL with a SAS token (permissions read, create, write, list; no delete needed) |
+| `AZURE_HFP_PREFIX` | Where the Parquet days go in the container, default `/hsl/hfp/`: `<container>/hsl/hfp/dt=YYYY-MM-DD/` |
+| `AZURE_HFP_RAW_PREFIX` | When set (e.g. `/hsl/hfp-raw/`), the raw tars are copied to `<container><prefix>YYYY/MM/DD/`; empty or unset copies no tars |
+
+`hfp-archive` reads `.env` from the working directory itself, so the SAS token never has to be on a
+command line. Never commit `.env` or paste the token anywhere else.
 
 Everything goes over SSH and rsync, so the WebDAV mount is not needed. The archive root
 `2025_HSL_RT/` must hold the sentinel file `.hfp-archive-sentinel`, created once with:
@@ -73,6 +79,47 @@ just archive-stop                              # stop the bulk run after its cur
 `archive-bg` keeps running when the terminal closes. `caffeinate -is` keeps the Mac from idle sleep
 and, on AC power, from system sleep; a closed lid still sleeps the Mac unless it runs clamshell with
 power and a display. After waking, the run waits for the network and carries on.
+
+## Copying to Azure Blob storage
+
+`replicate` copies finished days (manifest state `done` or `purged`, all checks passed) from the
+storage box to the Azure container, to the Cool tier. It never deletes or overwrites a blob, except a
+day's `_manifest.json`.
+
+1. For each data file (Parquet parts, repeats, rejects, and the tar if `AZURE_HFP_RAW_PREFIX` is set),
+   it downloads the file here, compares its SHA-256 with the storage box manifest, and uploads it as
+   a new blob. The SDK checks the MD5 of every block, the blob gets `sha256` metadata and its
+   Content-MD5, and the size and metadata are read back after the upload. One file at a time is on
+   the local disk.
+2. A blob that already exists with the same size and SHA-256 is skipped. A blob that exists with other
+   content fails the day, and nothing is overwritten.
+3. The manifest goes last. A `dt=` prefix without `_manifest.json` is incomplete, and the next run
+   finishes it. Readers should treat a day as present only when its manifest is.
+4. `--verify` downloads every blob back and compares its SHA-256. This costs Azure egress, so use it
+   on a sample.
+
+It has its own lock (`replicate.lock`), so it can run next to a conversion run. Failed days are tried
+again on the next run. Three failures in a row stop the run, and so do an expired or refused SAS
+token (exit code 5) and an Azure outage longer than 6 hours.
+
+```bash
+just archive azure-check                         # write, read back and list a probe blob
+just archive replicate --days 2026-10-15 --verify  # one day, read back from Azure
+just archive-replicate-bg                        # every converted day, in tmux
+just archive-replica-status                      # copied / failed / not yet
+```
+
+The Azure copy of a manifest is the one from the time of copying (`done`). When a day is purged
+later, the storage box manifest says `purged`, but the Azure copy is not updated.
+
+## Daily operation
+
+`just archive-daily` converts the days that have passed the cutoff and then copies every finished day
+to Azure. On Linux, `just archive-timer-install` installs a systemd user timer that runs it every day
+at 06:30, catching up missed runs. Run `loginctl enable-linger "$USER"` once so the timer also runs
+while you are logged out. `just archive-timer-status` shows the next run and the last log lines.
+The log is `~/hfp-archive-work/logs/daily.log`. While a bulk `archive-bg` run is still going, the
+daily conversion step exits at once (the lock is taken) and only the copy runs.
 
 ## Running on a Linux server
 

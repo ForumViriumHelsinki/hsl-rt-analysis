@@ -60,7 +60,35 @@ CREATE TABLE IF NOT EXISTS audits (
     deep INTEGER NOT NULL,
     details TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS replicas (
+    day TEXT NOT NULL,
+    target TEXT NOT NULL,
+    state TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_error TEXT,
+    info TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (day, target)
+);
 """
+
+
+class ReplicaState(StrEnum):
+    """Where the copy of one day in one blob container is."""
+
+    DONE = "done"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class ReplicaRecord:
+    """One row of the replicas table."""
+
+    day: str
+    target: str
+    state: ReplicaState
+    updated_at: str
+    last_error: str | None
+    info: dict[str, Any]
 
 
 def now_iso() -> str:
@@ -238,3 +266,45 @@ class StateDB:
         """
         row = self.con.execute("SELECT at, ok FROM audits WHERE day = ? ORDER BY at DESC LIMIT 1", [day]).fetchone()
         return (row[0], bool(row[1])) if row else None
+
+    def set_replica(
+        self,
+        day: str,
+        target: str,
+        state: ReplicaState,
+        error: str | None = None,
+        **info: Any,  # noqa: ANN401
+    ) -> None:
+        """Record the outcome of copying a day to a blob container.
+
+        Args:
+            day: The day.
+            target: The container and prefix.
+            state: The outcome.
+            error: The error, for FAILED.
+            **info: Values stored as the record's info JSON.
+        """
+        self.con.execute(
+            "INSERT OR REPLACE INTO replicas (day, target, state, updated_at, last_error, info)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            [day, target, state, now_iso(), error, json.dumps(info, default=str)],
+        )
+        self.con.execute(
+            "INSERT INTO events (day, at, state, message) VALUES (?, ?, ?, ?)",
+            [day, now_iso(), f"replica {state}", error or target],
+        )
+
+    def replicas(self, target: str) -> dict[str, ReplicaRecord]:
+        """Return the replication records of one target.
+
+        Args:
+            target: The container and prefix.
+
+        Returns:
+            Day mapped to its record.
+        """
+        rows = self.con.execute(
+            "SELECT day, target, state, updated_at, last_error, info FROM replicas WHERE target = ? ORDER BY day",
+            [target],
+        )
+        return {r[0]: ReplicaRecord(r[0], r[1], ReplicaState(r[2]), r[3], r[4], json.loads(r[5])) for r in rows}
