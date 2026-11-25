@@ -17,7 +17,8 @@ set dotenv-required := false
 lint_paths := "src tests"
 # The archive converter's tmux session and log, used by the archive-* recipes.
 archive_session := "hfp-archive"
-archive_log := env("HOME") / "hfp-archive-work/logs/run.log"
+archive_log_dir := env("HOME") / "hfp-archive-work/logs"
+archive_log := archive_log_dir / "run.log"
 
 [private]
 default:
@@ -111,6 +112,75 @@ archive-bg *args:
         echo "the run stopped at once; see the error with: tmux attach -t {{ archive_session }}"; exit 1
     fi
     echo "started; follow with: just archive-log   (or tmux attach -t {{ archive_session }})"
+
+# Copies the converted days to the Azure Blob container in a detached tmux session, next to a running
+# conversion (it has its own lock). The SAS URL and prefixes come from .env, which hfp-archive reads
+# itself, so the token never appears on a command line. Extra arguments go to `hfp-archive replicate`,
+# e.g. `just archive-replicate-bg --to 2025-12-31`.
+[doc('Copy converted days to Azure in the background (tmux), log to ~/hfp-archive-work/logs/replicate.log')]
+[group('project')]
+archive-replicate-bg *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    session=hfp-replicate log="{{ archive_log_dir }}/replicate.log"
+    if tmux has-session -t "$session" 2>/dev/null; then
+        echo "already running: tmux attach -t $session"; exit 1
+    fi
+    mkdir -p "{{ archive_log_dir }}"
+    tmux new-session -d -s "$session" -c "{{ justfile_directory() }}" env PATH="$PATH" \
+        bash -c '"$@"; rc=$?
+            echo "$(date +%FT%T) hfp-archive replicate exited with status $rc" >> "'"$log"'"
+            if [ "$rc" -ne 0 ]; then echo "exited with status $rc; press Enter to close"; read -r _; fi' \
+        archive-replicate-bg uv run hfp-archive replicate --log-file "$log" "$@"
+    echo "started; follow with: tail -f $log   (or tmux attach -t $session)"
+
+# One daily pass: convert the days that have passed the cutoff, then copy every finished day to Azure.
+# The systemd timer of archive-timer-install runs this. Both steps run even if the first one fails.
+[doc('Daily pass: convert new days, then copy finished days to Azure')]
+[group('project')]
+archive-daily:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    log="{{ archive_log_dir }}/daily.log"
+    uv run hfp-archive run --log-file "$log"; run_rc=$?
+    uv run hfp-archive replicate --log-file "$log"; rep_rc=$?
+    echo "$(date +%FT%T) daily pass: run exited $run_rc, replicate exited $rep_rc" >> "$log"
+    exit $(( run_rc || rep_rc ))
+
+# Installs a systemd user timer (Linux) that runs `just archive-daily` every day at 06:30 local time;
+# Persistent=true catches up a run missed while the machine was off. For it to run while you are
+# logged out, enable lingering once: `loginctl enable-linger "$USER"`.
+[doc('Install the daily systemd user timer for archive-daily (Linux)')]
+[group('project')]
+archive-timer-install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    units="$HOME/.config/systemd/user"
+    mkdir -p "$units"
+    printf '%s\n' "[Unit]" "Description=HFP archive daily conversion and Azure copy" \
+        "[Service]" "Type=oneshot" "WorkingDirectory={{ justfile_directory() }}" \
+        "Environment=PATH=$PATH" "ExecStart=$(command -v just) archive-daily" > "$units/hfp-archive-daily.service"
+    printf '%s\n' "[Unit]" "Description=Run the HFP archive daily pass" \
+        "[Timer]" "OnCalendar=*-*-* 06:30" "Persistent=true" \
+        "[Install]" "WantedBy=timers.target" > "$units/hfp-archive-daily.timer"
+    systemctl --user daemon-reload
+    systemctl --user enable --now hfp-archive-daily.timer
+    systemctl --user list-timers hfp-archive-daily.timer
+    loginctl show-user "$USER" -p Linger
+
+# When the daily timer runs next and how its last runs went.
+[doc('Show the daily timer and its recent runs (Linux)')]
+[group('project')]
+archive-timer-status:
+    systemctl --user list-timers hfp-archive-daily.timer
+    journalctl --user -u hfp-archive-daily.service -n 20 --no-pager
+    tail -n 5 "{{ archive_log_dir }}/daily.log"
+
+# Progress of the Azure copy: copied, failed and not yet copied days.
+[doc('Progress of the Azure copy')]
+[group('project')]
+archive-replica-status:
+    uv run hfp-archive replica-status
 
 # Follow the bulk run's log.
 [group('project')]
