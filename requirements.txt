@@ -57,7 +57,7 @@ idna==3.20
     # via
     #   anyio
     #   requests
-importlib-metadata==10.1.0
+importlib-metadata==10.2.0
     # via dash
 interface-meta==2.0.1
     # via formulaic
