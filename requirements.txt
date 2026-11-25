@@ -128,7 +128,7 @@ packaging==26.3
     #   pyogrio
     #   statsmodels
     #   streamlit
-paho-mqtt==2.1.0
+paho-mqtt==2.2.0
     # via hsl-rt-analysis (pyproject.toml)
 pandas==3.1.1
     # via
