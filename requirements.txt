@@ -91,7 +91,7 @@ matplotlib==3.11.2
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   seaborn
-narwhals==2.28.0
+narwhals==2.29.0
     # via
     #   altair
     #   formulaic
