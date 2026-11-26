@@ -197,7 +197,7 @@ scipy==1.18.1
     #   statsmodels
 seaborn==0.13.2
     # via hsl-rt-analysis (pyproject.toml)
-sentry-sdk==2.73.0
+sentry-sdk==2.76.0
     # via hsl-rt-analysis (pyproject.toml)
 setuptools==84.2.1
     # via dash
