@@ -182,6 +182,13 @@ archive-timer-status:
 archive-replica-status:
     uv run hfp-archive replica-status
 
+# Runs exploration/sirius_benchmark.py in its own environment (DuckDB 2.0, independent of the project's
+# pinned DuckDB). See docs/sirius-benchmark.md, e.g. `just sirius-bench --data ~/sirius-bench/data`.
+[doc('Benchmark HFP queries on CPU vs the Sirius GPU extension (Linux + NVIDIA)')]
+[group('project')]
+sirius-bench *args:
+    uv run --script exploration/sirius_benchmark.py "$@"
+
 # Follow the bulk run's log.
 [group('project')]
 archive-log:
