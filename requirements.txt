@@ -213,7 +213,7 @@ statsmodels==0.15.0
     # via hsl-rt-analysis (pyproject.toml)
 streamlit==1.66.1
     # via hsl-rt-analysis (pyproject.toml)
-threadpoolctl==3.7.0
+threadpoolctl==3.8.0
     # via scikit-learn
 tqdm==4.70.1
     # via hsl-rt-analysis (pyproject.toml)
