@@ -211,7 +211,7 @@ starlette==1.10.0
     # via streamlit
 statsmodels==0.15.0
     # via hsl-rt-analysis (pyproject.toml)
-streamlit==1.66.1
+streamlit==1.67.0
     # via hsl-rt-analysis (pyproject.toml)
 threadpoolctl==3.7.0
     # via scikit-learn
