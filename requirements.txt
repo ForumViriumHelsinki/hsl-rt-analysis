@@ -144,7 +144,7 @@ pillow==13.0.0
     # via
     #   matplotlib
     #   streamlit
-plotly==7.1.0
+plotly==7.2.0
     # via
     #   hsl-rt-analysis (pyproject.toml)
     #   dash
